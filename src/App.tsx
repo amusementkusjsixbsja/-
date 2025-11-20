@@ -73,8 +73,10 @@ function App() {
 
   return (
     <div className="app">
+      <div className="header">
       <h1>Markdown 渲染器（流式开关）</h1>
-      
+      <p>by:前端2组b队</p>
+    </div>
       {/* 流式渲染开关 */}
       <div className="stream-toggle">
         <label>

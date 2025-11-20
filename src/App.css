@@ -7,6 +7,25 @@ html, body {
   padding: 0;
 }
 
+/* --- 头部样式 --- */
+.header {
+  display: flex;          /* 开启 Flexbox 布局 */
+  align-items: baseline;   /* 让文字基线对齐，看起来更协调 */
+  justify-content: space-between; /* 让它们分别靠左和靠右，两端对齐 */
+  margin-bottom: 20px;     /* 与下方开关拉开一些距离 */
+}
+
+.header h1 {
+  margin: 0; /* h1 默认有 margin，需要清除 */
+}
+
+.header p {
+  margin: 0; /* p 默认有 margin，需要清除 */
+  color: #64748b; /* 给署名一个柔和的颜色 */
+  font-size: 0.9em; /* 让署名文字小一点 */
+}
+
+
 body {
   background-color: #f8fafc;
   /* 给页面一个柔和的浅灰色背景 */
