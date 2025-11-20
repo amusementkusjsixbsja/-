@@ -95,7 +95,13 @@ function App() {
       <div className="container">
         {/* 编辑区 */}
         <div className="editor">
-          <h2>编辑区</h2>
+          {/* 新增：标题和按钮的容器 */}
+          <div className="editor-header">
+            <h2>编辑区</h2>
+            <button onClick={() => { setMarkdown(''); }} className="clear-button">
+              删除全部
+            </button>
+          </div>
           <textarea
             value={markdown}
             onChange={(e) => setMarkdown(e.target.value)}

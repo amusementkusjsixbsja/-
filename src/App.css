@@ -1,28 +1,38 @@
 /* --- 全局与布局 --- */
 /* --- 核心修复：禁用页面整体滚动 --- */
-html, body {
+html,
+body {
   height: 100%;
-  overflow: hidden; /* 这是关键：隐藏任何溢出的内容，从而禁用滚动条 */
+  overflow: hidden;
+  /* 这是关键：隐藏任何溢出的内容，从而禁用滚动条 */
   margin: 0;
   padding: 0;
 }
 
 /* --- 头部样式 --- */
 .header {
-  display: flex;          /* 开启 Flexbox 布局 */
-  align-items: baseline;   /* 让文字基线对齐，看起来更协调 */
-  justify-content: space-between; /* 让它们分别靠左和靠右，两端对齐 */
-  margin-bottom: 20px;     /* 与下方开关拉开一些距离 */
+  display: flex;
+  /* 开启 Flexbox 布局 */
+  align-items: baseline;
+  /* 让文字基线对齐，看起来更协调 */
+  justify-content: space-between;
+  /* 让它们分别靠左和靠右，两端对齐 */
+  margin-bottom: 20px;
+  /* 与下方开关拉开一些距离 */
 }
 
 .header h1 {
-  margin: 0; /* h1 默认有 margin，需要清除 */
+  margin: 0;
+  /* h1 默认有 margin，需要清除 */
 }
 
 .header p {
-  margin: 0; /* p 默认有 margin，需要清除 */
-  color: #64748b; /* 给署名一个柔和的颜色 */
-  font-size: 0.9em; /* 让署名文字小一点 */
+  margin: 0;
+  /* p 默认有 margin，需要清除 */
+  color: #64748b;
+  /* 给署名一个柔和的颜色 */
+  font-size: 0.9em;
+  /* 让署名文字小一点 */
 }
 
 
@@ -86,6 +96,51 @@ h2 {
   flex-direction: column;
 }
 
+/* --- 编辑区头部样式 --- */
+.editor-header {
+  margin-top: 20px;
+  display: flex;
+  justify-content: space-between;
+  /* 标题靠左，按钮靠右 */
+  align-items: center;
+  /* 垂直居中对齐 */
+  margin-bottom: 12px;
+}
+
+.editor-header h2 {
+  margin: 0;
+  /* 清除 h2 的默认 margin */
+}
+
+/* 删除全部按钮样式 */
+.clear-button {
+  padding: 6px 12px;
+  font-size: 14px;
+  color: #ef4444;
+  /* 红色文字，表示危险操作 */
+  background-color: transparent;
+  /* 透明背景 */
+  border: 1px solid #ef4444;
+  /* 红色边框 */
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  /* 添加平滑过渡效果 */
+}
+
+.clear-button:hover {
+  background-color: #fef2f2;
+  /* 鼠标悬停时，背景变为非常浅的红色 */
+  border-color: #dc2626;
+  /* 边框颜色加深 */
+}
+
+.clear-button:active {
+  transform: scale(0.98);
+  /* 点击时轻微缩小，提供反馈 */
+}
+
+
 /* --- 编辑区与预览区 --- */
 textarea,
 .preview-content {
@@ -134,52 +189,56 @@ textarea:focus {
 
 /* 步骤 1: 移除所有复选框的原生外观 */
 .preview-content [type="checkbox"] {
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
 
-    /* 基础尺寸和外边距，与原生复选框相似 */
-    width: 16px;
-    height: 16px;
-    margin-right: 8px;
-    margin-top: 2px; /* 微调与文字的对齐 */
+  /* 基础尺寸和外边距，与原生复选框相似 */
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  margin-top: 2px;
+  /* 微调与文字的对齐 */
 
-    /* 定位，以便后面的勾选标记能相对于它定位 */
-    position: relative;
-    
-    /* 绘制未选中状态的方框 */
-    border: 1px solid #d1d5db; /* 灰色边框 */
-    border-radius: 3px;
-    background-color: #ffffff;
+  /* 定位，以便后面的勾选标记能相对于它定位 */
+  position: relative;
+
+  /* 绘制未选中状态的方框 */
+  border: 1px solid #d1d5db;
+  /* 灰色边框 */
+  border-radius: 3px;
+  background-color: #ffffff;
 }
 
 /* 步骤 2: 绘制选中状态的样式 */
 .preview-content [type="checkbox"]:checked {
-    /* 选中时的背景色和边框色 */
-    background-color: #10b981; /* 绿色背景 */
-    border-color: #10b981;
+  /* 选中时的背景色和边框色 */
+  background-color: #10b981;
+  /* 绿色背景 */
+  border-color: #10b981;
 }
 
 /* 步骤 3: 使用伪元素 ::after 绘制里面的“勾” */
 .preview-content [type="checkbox"]:checked::after {
-    content: ''; /* 必须有 content */
+  content: '';
+  /* 必须有 content */
 
-    /* 绝对定位到复选框中心 */
-    position: absolute;
-    display: block;
-    
-    /* 勾的尺寸和位置 */
-    top: 1px;
-    left: 4px;
+  /* 绝对定位到复选框中心 */
+  position: absolute;
+  display: block;
 
-    /* 勾的样式：一个旋转的"L"形边框 */
-    width: 4px;
-    height: 8px;
-    border: solid white;
-    border-width: 0 2px 2px 0;
+  /* 勾的尺寸和位置 */
+  top: 1px;
+  left: 4px;
 
-    /* 旋转45度，变成勾 */
-    transform: rotate(45deg);
+  /* 勾的样式：一个旋转的"L"形边框 */
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+
+  /* 旋转45度，变成勾 */
+  transform: rotate(45deg);
 }
 
 
@@ -240,8 +299,8 @@ textarea:focus {
 }
 
 .callout-default {
-  background-color: #f8fafc;
-  border-color: #94a3b8;
+  background-color: #d3fef2;
+  border-color: #8bd8c1;
 }
 
 .callout-danger {
