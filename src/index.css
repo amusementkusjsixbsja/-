@@ -12,9 +12,12 @@
   margin-top: 20px;
 }
 
-.editor, .preview {
+.editor,
+.preview {
   flex: 1;
   min-height: 600px;
+  max-width: 520px;
+  
 }
 
 textarea {
@@ -42,7 +45,8 @@ textarea {
   margin: 16px 0;
 }
 
-.preview-content th, .preview-content td {
+.preview-content th,
+.preview-content td {
   border: 1px solid #ddd;
   padding: 8px 12px;
 }
@@ -69,6 +73,7 @@ textarea {
   border-top: 1px solid #eee;
   font-size: 0.9em;
 }
+
 /* src/index.css 或 App.css */
 .markdown-preview {
   padding: 1rem;
@@ -125,7 +130,7 @@ textarea {
   border-color: #ef4444;
 }
 
-.directive-callout > p:first-child {
+.directive-callout>p:first-child {
   font-weight: bold;
   margin-top: 0;
 }
