@@ -17,7 +17,7 @@
   flex: 1;
   min-height: 600px;
   max-width: 520px;
-  
+
 }
 
 textarea {
@@ -51,14 +51,62 @@ textarea {
   padding: 8px 12px;
 }
 
-.preview-content th {
-  background-color: #f5f5f5;
+/* ==================== 任务列表样式 ==================== */
+
+/* 步骤 1: 移除所有复选框的原生外观 */
+.preview-content [type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+
+  /* 基础尺寸和外边距，与原生复选框相似 */
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  margin-top: 3px;
+  /* 微调与文字的对齐 */
+
+  /* 定位，以便后面的勾选标记能相对于它定位 */
+  position: relative;
+
+  /* 绘制未选中状态的方框 */
+  border: 1px solid #d1d5db;
+  /* 灰色边框 */
+  border-radius: 3px;
+  background-color: #ffffff;
 }
 
-/* 任务列表样式 */
-.preview-content [type="checkbox"] {
-  margin-right: 8px;
+/* 步骤 2: 绘制选中状态的样式 */
+.preview-content [type="checkbox"]:checked {
+  /* 选中时的背景色和边框色 */
+  background-color: #10b981;
+  /* 绿色背景 */
+  border-color: #10b981;
 }
+
+/* 步骤 3: 使用伪元素 ::after 绘制里面的“勾” */
+.preview-content [type="checkbox"]:checked::after {
+  content: '';
+  /* 必须有 content */
+
+  /* 绝对定位到复选框中心 */
+  position: absolute;
+  display: block;
+
+  /* 勾的尺寸和位置 */
+  top: 1px;
+  left: 4px;
+
+  /* 勾的样式：一个旋转的"L"形边框 */
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+
+  /* 旋转45度，变成勾 */
+  transform: rotate(45deg);
+}
+
 
 /* 脚注样式 */
 .preview-content .footnote-reference {
