@@ -182,87 +182,59 @@ export class MarkdownSyntaxFixer {
     return positions;
   }
 
-  // 检查位置是否被转义
-  private isEscaped(position: number, escapePositions: number[]): boolean {
-    return escapePositions.includes(position);
-  }
 
-  // 代码块修复（```）
+  // 代码块修复
   private fixCodeBlocksWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
-    if (!this.options.codeBlocks.enabled) {
-      return { fixed: markdown, addedChars: [] };
-    }
-
-    // 查找所有独立行的 ```
-    const codeBlockRegex = /(^|\n)```(.*?)(\n|$)/g;
-    const matches: { start: number; end: number; language: string }[] = [];
-    let match;
-
-    while ((match = codeBlockRegex.exec(markdown)) !== null) {
-      // 检查是否被转义
-      const isEscaped = this.isEscaped(match.index + (match[1] ? 1 : 0), escapePositions);
-      if (!isEscaped) {
-        matches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          language: match[2].trim()
-        });
-      }
-    }
-
-    // 检查代码块是否成对
-    if (matches.length % 2 !== 0) {
-      const lastMatch = matches[matches.length - 1];
-      // 闭合标记不添加代码类型
-      const closingTag = '\n```\n';
-
-      // 优化：找到代码块应该结束的位置
-      // 1. 首先查找下一个独立行的开始位置
-      // 2. 如果没有找到，检查是否为文档末尾
-      // 3. 确保闭合标记插入在合适的位置
-
-      // 查找下一个可能的代码块结束位置
-      let insertPosition = markdown.length;
-
-      // 查找下一个独立行的 ``` 或文档末尾
-      const nextCodeBlockStart = markdown.indexOf('\n```', lastMatch.end);
-      const nextEmptyLine = markdown.indexOf('\n\n', lastMatch.end);
-      const nextLineStart = markdown.indexOf('\n', lastMatch.end);
-
-      // 优先级：
-      // 1. 下一个代码块开始前
-      // 2. 下一个空行前
-      // 3. 下一个换行前
-      // 4. 文档末尾
-      if (nextCodeBlockStart !== -1) {
-        insertPosition = nextCodeBlockStart;
-      } else if (nextEmptyLine !== -1) {
-        insertPosition = nextEmptyLine;
-      } else if (nextLineStart !== -1) {
-        insertPosition = nextLineStart;
-      }
-
-      // 确保插入位置在代码块内容之后
-      insertPosition = Math.max(insertPosition, lastMatch.end);
-
-      // 插入闭合代码块标记
-      const fixedMarkdown = (
-        markdown.slice(0, insertPosition) +
-        closingTag +
-        markdown.slice(insertPosition)
-      );
-
-      // 记录添加的字符
-      const addedChars = closingTag.split('').map((char, index) => ({
-        char,
-        position: insertPosition + index
-      }));
-
-      return { fixed: fixedMarkdown, addedChars };
-    }
-
+  if (!this.options.codeBlocks.enabled) {
     return { fixed: markdown, addedChars: [] };
   }
+
+  const lines = markdown.split('\n');
+  const addedChars: { char: string; position: number }[] = [];
+  let inCodeBlock = false; // 状态机：是否在未闭合的代码块内
+  let codeBlockStartLine = -1; // 记录未闭合代码块的起始行
+  let charOffset = 0; // 字符偏移量（计算插入位置）
+
+  // 步骤1：逐行扫描，追踪代码块状态
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    // 匹配独立行的 ``` （代码块起始/结束行）
+    const codeBlockMatch = line.match(/^```\s*([\w-]*)\s*$/);
+    
+    if (codeBlockMatch && !this.isEscaped(charOffset + lines[i].indexOf('```'), escapePositions)) {
+      if (inCodeBlock) {
+        // 遇到闭合标记，退出代码块
+        inCodeBlock = false;
+        codeBlockStartLine = -1;
+      } else {
+        // 遇到起始标记，进入代码块
+        inCodeBlock = true;
+        codeBlockStartLine = i;
+      }
+    }
+    // 更新字符偏移量（当前行长度 + 换行符）
+    charOffset += lines[i].length + 1;
+  }
+
+  // 步骤2：补全所有未闭合的代码块
+  let fixedMarkdown = markdown;
+  if (inCodeBlock) {
+    // 计算插入位置：文本末尾
+    const insertPosition = fixedMarkdown.length;
+    const closingTag = '\n```'; // 补全闭合标记（简化，仅加```）
+    
+    // 插入闭合标记
+    fixedMarkdown += closingTag;
+    // 记录添加的字符
+    addedChars.push(...closingTag.split('').map((char, index) => ({
+      char,
+      position: insertPosition + index
+    })));
+  }
+
+  return { fixed: fixedMarkdown, addedChars };
+}
+
 
   // 行内代码修复（`）
   private fixInlineCodeWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
@@ -359,140 +331,177 @@ export class MarkdownSyntaxFixer {
   }
 
   // 数学公式修复
-  private fixMathFormulasWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
-    if (!this.options.mathFormulas.enabled) {
-      return { fixed: markdown, addedChars: [] };
-    }
-
-    let fixedMarkdown = markdown;
-    const allAddedChars: { char: string; position: number }[] = [];
-
-    // 先处理块级公式 $$
-    const blockMathRegex = /(^|\n)\$\$(.*?)(\n|$)/g;
-    const blockMatches: { start: number; end: number }[] = [];
-    let match;
-
-    while ((match = blockMathRegex.exec(fixedMarkdown)) !== null) {
-      const isEscaped = this.isEscaped(match.index + (match[1] ? 1 : 0), escapePositions);
-      if (!isEscaped) {
-        blockMatches.push({
-          start: match.index,
-          end: match.index + match[0].length
-        });
-      }
-    }
-
-    if (blockMatches.length % 2 !== 0) {
-      const lastMatch = blockMatches[blockMatches.length - 1];
-      const closingTag = '\n$$\n';
-
-      // 优化：找到块级公式应该结束的位置
-      // 1. 查找下一个可能的结束位置
-      // 2. 优先级：下一个公式前 > 空行前 > 换行前 > 文档末尾
-
-      const nextBlockMath = fixedMarkdown.indexOf('\n$$', lastMatch.end);
-      const nextEmptyLine = fixedMarkdown.indexOf('\n\n', lastMatch.end);
-      const nextLineStart = fixedMarkdown.indexOf('\n', lastMatch.end);
-
-      let insertPosition = fixedMarkdown.length;
-
-      // 优先级：
-      // 1. 下一个块级公式前
-      // 2. 下一个空行前
-      // 3. 下一个换行前
-      // 4. 文档末尾
-      if (nextBlockMath !== -1) {
-        insertPosition = nextBlockMath;
-      } else if (nextEmptyLine !== -1) {
-        insertPosition = nextEmptyLine;
-      } else if (nextLineStart !== -1) {
-        insertPosition = nextLineStart;
-      }
-
-      // 确保插入位置在当前公式内容之后
-      insertPosition = Math.max(insertPosition, lastMatch.end);
-
-      let addedChars: { char: string; position: number }[];
-
-      if (insertPosition === fixedMarkdown.length) {
-        // 如果是文档末尾，直接在末尾添加
-        fixedMarkdown = fixedMarkdown + closingTag;
-        addedChars = closingTag.split('').map((char, index) => ({
-          char,
-          position: fixedMarkdown.length - closingTag.length + index
-        }));
-      } else {
-        // 在指定位置插入闭合标记
-        fixedMarkdown = (
-          fixedMarkdown.slice(0, insertPosition) +
-          closingTag +
-          fixedMarkdown.slice(insertPosition)
-        );
-        addedChars = closingTag.split('').map((char, index) => ({
-          char,
-          position: insertPosition + index
-        }));
-      }
-
-      allAddedChars.push(...addedChars);
-    }
-
-
-    // 处理行内公式 $（核心修改：本行末尾补全$）
-    const lines = fixedMarkdown.split('\n');
-    const newLines = [...lines];
-    let charOffset = 0; // 记录字符偏移量（处理行添加后的位置变化）
-
-    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-      const line = lines[lineIdx];
-      const currentLineOffset = charOffset;
-
-      // 跳过块级公式行
-      if (line.trim().startsWith('$$') || line.trim().endsWith('$$')) {
-        charOffset += line.length + 1; // +1 换行符
-        continue;
-      }
-
-      // 匹配当前行未转义的$（排除$$中的$）
-      const inlineMathRegex = /(?<!\\)\$(?!\$)/g;
-      const inlineMatches: number[] = [];
-      let lineMatch: RegExpExecArray | null;
-
-      while ((lineMatch = inlineMathRegex.exec(line)) !== null) {
-        const matchPosInLine = lineMatch.index;
-        const matchPosInFull = currentLineOffset + matchPosInLine;
-        const isEscaped = this.isEscaped(matchPosInFull, escapePositions);
-
-        if (!isEscaped) {
-          inlineMatches.push(matchPosInFull);
-        }
-      }
-
-      // 奇数个$ → 未闭合，在本行末尾添加$
-      if (inlineMatches.length % 2 !== 0) {
-        // 计算本行末尾的位置（行尾，换行符前）
-        const lineEndPos = currentLineOffset + line.length;
-
-        // 插入$到本行末尾
-        newLines[lineIdx] = line + '$';
-        fixedMarkdown = newLines.join('\n');
-
-        // 记录添加的字符
-        const addedChar = {
-          char: '$',
-          position: lineEndPos
-        };
-        allAddedChars.push(addedChar);
-
-        // 更新字符偏移量（当前行长度+1）
-        charOffset += (line.length + 1) + 1; // +1 新增的$，+1 换行符
-      } else {
-        charOffset += line.length + 1; // +1 换行符
-      }
-    }
-
-    return { fixed: fixedMarkdown, addedChars: allAddedChars };
+// src/utils/syntaxFixer.ts 中完整的 fixMathFormulasWithDiff 方法
+private fixMathFormulasWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
+  if (!this.options.mathFormulas.enabled) {
+    return { fixed: markdown, addedChars: [] };
   }
+
+  let fixedMarkdown = markdown;
+  const allAddedChars: { char: string; position: number }[] = [];
+
+  // ===================== 重构块级公式修复逻辑（核心扩展）=====================
+  // 1. 拆分文本为行，便于逐行处理
+  let lines = fixedMarkdown.split('\n');
+  // 存储所有未闭合的块级公式起始行信息
+  const unclosedBlockMaths: { startLine: number; contentStart: number; contentEnd: number }[] = [];
+  let inUnclosedBlock = false; // 标记是否进入未闭合的块级公式
+  let currentBlockStart = -1; // 当前未闭合块的起始行（$$行）
+
+  // 辅助函数：计算指定行之前的总字符数（含换行符），用于定位插入位置
+  const calculateCharPosition = (endLineIdx: number, linesArr: string[]): number => {
+    let pos = 0;
+    for (let j = 0; j <= endLineIdx; j++) {
+      pos += linesArr[j].length + 1; // +1 代表换行符 \n
+    }
+    return pos;
+  };
+
+  // 辅助函数：检查行是否为未转义的 $$ 独占行
+  const isUnescapedDollarLine = (lineIdx: number, linesArr: string[]): boolean => {
+    const line = linesArr[lineIdx];
+    const trimmedLine = line.trim();
+    if (trimmedLine !== '$$') return false;
+    // 检查 $$ 是否被转义
+    const dollarPos = line.indexOf('$$');
+    return dollarPos !== -1 && !this.isEscaped(calculateCharPosition(lineIdx - 1, linesArr) + dollarPos, escapePositions);
+  };
+
+  // 第一步：遍历所有行，识别所有未闭合的块级公式（支持多行内容 + 批量处理）
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // 场景1：遇到未转义的 $$ 独占行 → 判定为块级公式起始/结束
+    if (isUnescapedDollarLine(i, lines)) {
+      if (!inUnclosedBlock) {
+        // 标记为块级公式开始
+        inUnclosedBlock = true;
+        currentBlockStart = i;
+      } else {
+        // 遇到闭合的 $$ → 标记为已闭合
+        inUnclosedBlock = false;
+        currentBlockStart = -1;
+      }
+    } 
+    // 场景2：处于未闭合块中，且是最后一行 → 记录未闭合块信息
+    else if (inUnclosedBlock && i === lines.length - 1) {
+      unclosedBlockMaths.push({
+        startLine: currentBlockStart,
+        contentStart: currentBlockStart + 1,
+        contentEnd: i // 多行内容的结束行
+      });
+    }
+    // 场景3：处于未闭合块中，遇到空行 → 判定块内容结束，记录未闭合块
+    else if (inUnclosedBlock && line === '') {
+      unclosedBlockMaths.push({
+        startLine: currentBlockStart,
+        contentStart: currentBlockStart + 1,
+        contentEnd: i - 1 // 空行前的最后一行是内容行
+      });
+      inUnclosedBlock = false;
+      currentBlockStart = -1;
+    }
+  }
+
+  // 第二步：按规则修复所有未闭合的块级公式
+  if (unclosedBlockMaths.length > 0) {
+    let lineOffset = 0; // 记录行偏移（插入行导致的行索引变化）
+    unclosedBlockMaths.forEach(block => {
+      // 修正行索引（处理之前插入行导致的偏移）
+      const actualContentEnd = block.contentEnd + lineOffset;
+      const targetLine = actualContentEnd + 1; // 要插入$$的目标行（第三行/空行）
+      let insertCharPos: number;
+      let addedChars: { char: string; position: number }[] = [];
+
+      // 规则1：目标行存在且为空行 → 直接替换为空行为$$
+      if (targetLine < lines.length && lines[targetLine].trim() === '') {
+        insertCharPos = calculateCharPosition(targetLine - 1, lines);
+        // 替换空行为$$
+        lines[targetLine] = '$$';
+        addedChars = [{ char: '$$', position: insertCharPos }];
+      } 
+      // 规则2：目标行不存在（内容行是最后一行）→ 新增行并补$$
+      else {
+        insertCharPos = calculateCharPosition(actualContentEnd, lines);
+        // 插入新行（$$）
+        lines.splice(targetLine, 0, '$$');
+        // 记录添加的字符（换行符 + $$）
+        addedChars = [
+          { char: '\n', position: insertCharPos - 1 }, // 换行符（补在内容行末尾）
+          { char: '$$', position: insertCharPos }      // $$（新行）
+        ];
+        lineOffset += 1; // 插入了一行，后续行索引偏移+1
+      }
+
+      // 合并到总修复记录
+      allAddedChars.push(...addedChars);
+    });
+
+    // 更新修复后的文本
+    fixedMarkdown = lines.join('\n');
+    // 重新拆分行（用于后续行内公式处理）
+    lines = fixedMarkdown.split('\n');
+  }
+
+  // ===================== 保留原行内公式修复逻辑 =====================
+  let charOffset = 0; // 记录字符偏移量（处理行添加后的位置变化）
+  const newLines = [...lines];
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+    const currentLineOffset = charOffset;
+
+    // 跳过块级公式行
+    if (line.trim().startsWith('$$') || line.trim().endsWith('$$')) {
+      charOffset += line.length + 1; // +1 换行符
+      continue;
+    }
+
+    // 匹配当前行未转义的$（排除$$中的$）
+    const inlineMathRegex = /(?<!\\)\$(?!\$)/g;
+    const inlineMatches: number[] = [];
+    let lineMatch: RegExpExecArray | null;
+
+    while ((lineMatch = inlineMathRegex.exec(line)) !== null) {
+      const matchPosInLine = lineMatch.index;
+      const matchPosInFull = currentLineOffset + matchPosInLine;
+      const isEscaped = this.isEscaped(matchPosInFull, escapePositions);
+
+      if (!isEscaped) {
+        inlineMatches.push(matchPosInFull);
+      }
+    }
+
+    // 奇数个$ → 未闭合，在本行末尾添加$
+    if (inlineMatches.length % 2 !== 0) {
+      // 计算本行末尾的位置（行尾，换行符前）
+      const lineEndPos = currentLineOffset + line.length;
+
+      // 插入$到本行末尾
+      newLines[lineIdx] = line + '$';
+      fixedMarkdown = newLines.join('\n');
+
+      // 记录添加的字符
+      const addedChar = {
+        char: '$',
+        position: lineEndPos
+      };
+      allAddedChars.push(addedChar);
+
+      // 更新字符偏移量（当前行长度+1）
+      charOffset += (line.length + 1) + 1; // +1 新增的$，+1 换行符
+    } else {
+      charOffset += line.length + 1; // +1 换行符
+    }
+  }
+
+  return { fixed: fixedMarkdown, addedChars: allAddedChars };
+}
+
+// 保留原有的 isEscaped 方法（确保依赖可用）
+private isEscaped(position: number, escapePositions: number[]): boolean {
+  return escapePositions.includes(position);
+}
 
   /**
    * 查找未闭合的括号匹配（核心重构：支持全量匹配未闭合链接/图片）
