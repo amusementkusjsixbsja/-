@@ -1,0 +1,42 @@
+  /**
+   * 查找未闭合的括号匹配
+   * @param markdown 原始文本
+   * @param prefixRegex 前缀正则表达式（用于区分链接和图片）
+   * @returns 匹配结果数组
+   */
+  private findUnclosedBrackets(markdown: string, prefixRegex: string): Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> {
+    const matches: Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> = [];
+    let match: RegExpExecArray | null;
+
+    // 匹配未闭合的 [text](url 或 ![alt](url 部分
+    const unclosedRegexPattern = `${prefixRegex}\\[(.*?)(?<!\\\\)\\]\\s*\\(([^)]*)(?=\\n|$|\\s)`;
+    const unclosedRegex = new RegExp(unclosedRegexPattern, 'g');
+    while ((match = unclosedRegex.exec(markdown)) !== null) {
+      const afterMatch = markdown.slice(match.index + match[0].length);
+      if (!afterMatch.startsWith(')')) {
+        matches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          type: 'unclosed'
+        });
+      }
+    }
+
+    // 匹配仅含 [] 或 ![] 无 () 的情况
+    const onlyBracketRegexPattern = `${prefixRegex}\\[(.*?)(?<!\\\\)\\](?!\\s*\\()`;
+    const onlyBracketRegex = new RegExp(onlyBracketRegexPattern, 'g');
+    while ((match = onlyBracketRegex.exec(markdown)) !== null) {
+      const isDuplicate = matches.some(m =>
+        match && m.start <= match.index && m.end >= match.index + (match[0]?.length || 0)
+      );
+      if (!isDuplicate) {
+        matches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          type: 'onlyBracket'
+        });
+      }
+    }
+
+    return matches;
+  }

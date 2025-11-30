@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { markdownToHtml } from './utils/index';
+import { markdownToHtml, MarkdownSyntaxFixer } from './utils/index';
 import { StreamController } from './utils/streamController';
 import './App.css';
 
 function App() {
   const [markdown, setMarkdown] = useState<string>(''); // 编辑区内容
+  const [originalMarkdown, setOriginalMarkdown] = useState<string>(''); // 原始文本（修复前）
   const [previewContent, setPreviewContent] = useState<string>(''); // 预览区内容
   const [isStreamMode, setIsStreamMode] = useState<boolean>(false); // 流式渲染开关
+  const [isSyntaxFixed, setIsSyntaxFixed] = useState<boolean>(false); // 语法修复状态
 
   const streamControllerRef = useRef<StreamController | null>(null);
   const currentStreamContentRef = useRef<string>(''); // 记录当前流式渲染的内容（而非完整编辑区内容）
@@ -75,6 +77,26 @@ function App() {
     streamControllerRef.current?.add(markdown); // 重新添加全部内容（逐字渲染）
   }, [markdown, isStreamMode]);
 
+  // 语法修复按钮点击事件
+  const handleFixSyntax = () => {
+    if (!isSyntaxFixed) {
+      // 保存原始文本
+      setOriginalMarkdown(markdown);
+
+      // 执行语法修复
+      const fixer = new MarkdownSyntaxFixer();
+      const result = fixer.fixWithDiff(markdown);
+
+      // 更新编辑区内容
+      setMarkdown(result.fixed);
+      setIsSyntaxFixed(true);
+    } else {
+      // 恢复原始文本
+      setMarkdown(originalMarkdown);
+      setIsSyntaxFixed(false);
+    }
+  };
+
   return (
     <div className="app">
       <div className="header">
@@ -97,6 +119,16 @@ function App() {
             {isStreamMode ? '（编辑区输入将逐字渲染）' : '（编辑区输入将实时完整渲染）'}
           </span>
         </div>
+
+        {/* 语法修复按钮 */}
+        <div className="toggle-item">
+          <button
+            onClick={handleFixSyntax}
+            className={`fix-syntax-button ${isSyntaxFixed ? 'active' : ''}`}
+          >
+            {isSyntaxFixed ? '恢复原始文本' : '修复语法错误'}
+          </button>
+        </div>
       </div>
 
       <div className="container">
@@ -105,7 +137,11 @@ function App() {
           {/* 新增：标题和按钮的容器 */}
           <div className="editor-header">
             <h2>编辑区</h2>
-            <button onClick={() => { setMarkdown(''); }} className="clear-button">
+            <button onClick={() => {
+              setMarkdown('');
+              setIsSyntaxFixed(false);
+              setOriginalMarkdown('');
+            }} className="clear-button">
               删除全部
             </button>
           </div>

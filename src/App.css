@@ -93,7 +93,9 @@ h2 {
 
 .editor,
 .preview {
-  flex: 1;
+  width: 50%;
+  min-width: 400px;
+  max-width: 600px;
   display: flex;
   flex-direction: column;
 }
@@ -328,4 +330,39 @@ pre code[data-highlight-lines]::before {
 
 pre code[data-highlight-lines] .highlight-line {
   background-color: rgba(255, 255, 0, 0.2);
+}
+
+/* 语法修复按钮样式 */
+.fix-syntax-button {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #3b82f6;
+  background-color: transparent;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+.fix-syntax-button:hover {
+  background-color: #eff6ff;
+  border-color: #2563eb;
+}
+
+.fix-syntax-button.active {
+  color: #ef4444;
+  background-color: #fef2f2;
+  border-color: #ef4444;
+}
+
+.fix-syntax-button.active:hover {
+  background-color: #fee2e2;
+  border-color: #dc2626;
+}
+
+/* 修复字符样式 */
+.fixed-char {
+  color: #ef4444;
+  font-weight: bold;
 }

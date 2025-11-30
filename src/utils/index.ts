@@ -4,5 +4,6 @@
 export { MarkdownStreamBuffer } from './buffer';
 export { MarkdownStreamParser, markdownToHtml } from './parser';
 export { handleDirectives, handleCodeBlockLineHighlight } from './plugins';
+export { MarkdownSyntaxFixer } from './syntaxFixer';
 // 导出配置项供高级用户自定义使用
 export * from './config';
