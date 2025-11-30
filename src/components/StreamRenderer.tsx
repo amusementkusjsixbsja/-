@@ -1,11 +1,11 @@
-// src/components/StreamRenderer.tsx
-import { useState, useEffect, useRef } from 'react'; // 移除未使用的 useCallback
-import type { StreamOptions } from '../utils/streamController'; // 仅类型导入（关键修正）
+import { useState, useEffect, useRef } from 'react';
+import type { StreamOptions } from '../utils/streamController';
 import { StreamController } from '../utils/streamController';
-import { markdownToHtml } from '../utils/markdown';
+// 替换原有 markdownToHtml，导入流式解析器
+import { MarkdownStreamParser, markdownToHtml } from '../utils/index';
 
 interface StreamRendererProps {
-  onStreamData: (callback: (data: { content: string; isEnd: boolean }) => void) => (() => void) | void; // 明确返回类型
+  onStreamData: (callback: (data: { content: string; isEnd: boolean }) => void) => (() => void) | void;
   streamOptions?: Partial<StreamOptions>;
 }
 
@@ -14,28 +14,46 @@ export const StreamRenderer = ({ onStreamData, streamOptions }: StreamRendererPr
   const [rawContent, setRawContent] = useState('');
   const controllerRef = useRef<StreamController | null>(null);
   const isMounted = useRef(true);
+  // 新增：流式 Markdown 解析器实例（缓冲代码块）
+  const markdownParserRef = useRef<MarkdownStreamParser | null>(null);
+  // 新增：累积 HTML，避免分段替换导致闪烁
+  const accumulatedHtmlRef = useRef('');
 
   useEffect(() => {
     controllerRef.current = new StreamController(streamOptions);
-    
+    // 初始化流式 Markdown 解析器
+    markdownParserRef.current = new MarkdownStreamParser();
+
     controllerRef.current.onChar = (char) => {
       if (!isMounted.current) return;
-      
-      setRawContent(prev => {
-        const newContent = prev + char;
-        markdownToHtml(newContent).then(html => {
-          if (isMounted.current) {
-            setDisplayedHtml(html);
+
+      // 1. 累积原始内容（用于兜底）
+      setRawContent(prev => prev + char);
+
+      // 2. 用流式解析器处理字符（缓冲完整代码块）
+      if (markdownParserRef.current) {
+        markdownParserRef.current.processChunk(char).then(htmlChunk => {
+          if (isMounted.current && htmlChunk) {
+            // 累积 HTML 而非直接替换，避免覆盖已渲染内容
+            accumulatedHtmlRef.current += htmlChunk;
+            setDisplayedHtml(accumulatedHtmlRef.current);
           }
         });
-        return newContent;
-      });
+      }
     };
 
-    // 修正：处理 onStreamData 可能无返回值的情况（解决 "不可调用" 错误）
     const unsubscribe = onStreamData(({ content, isEnd }) => {
       if (isEnd) {
         controllerRef.current?.markAsEnd();
+        // 流式结束：处理缓冲中剩余的未闭合代码块
+        if (markdownParserRef.current) {
+          markdownParserRef.current.finish().then(finalHtml => {
+            if (isMounted.current && finalHtml) {
+              accumulatedHtmlRef.current += finalHtml;
+              setDisplayedHtml(accumulatedHtmlRef.current);
+            }
+          });
+        }
       }
       controllerRef.current?.add(content);
     });
@@ -43,15 +61,16 @@ export const StreamRenderer = ({ onStreamData, streamOptions }: StreamRendererPr
     return () => {
       isMounted.current = false;
       controllerRef.current?.stop();
-      if (typeof unsubscribe === 'function') { // 仅在有返回值时调用
+      if (typeof unsubscribe === 'function') {
         unsubscribe();
       }
     };
   }, [onStreamData, streamOptions]);
 
+  // 兜底：组件卸载前确保完整解析所有内容
   useEffect(() => {
     return () => {
-      if (rawContent && controllerRef.current?.['isEnd']) {
+      if (isMounted.current && rawContent) {
         markdownToHtml(rawContent).then(html => {
           if (isMounted.current) {
             setDisplayedHtml(html);
@@ -62,13 +81,13 @@ export const StreamRenderer = ({ onStreamData, streamOptions }: StreamRendererPr
   }, [rawContent]);
 
   return (
-    <div 
+    <div
       className="stream-renderer"
       dangerouslySetInnerHTML={{ __html: displayedHtml }}
-      style={{ 
-        minHeight: '200px', 
-        padding: '16px', 
-        border: '1px solid #eee' 
+      style={{
+        minHeight: '200px',
+        padding: '16px',
+        border: '1px solid #eee'
       }}
     />
   );

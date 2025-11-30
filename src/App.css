@@ -59,20 +59,22 @@ h2 {
   /* 减小标题下方的间距 */
 }
 
-/* 流式开关样式 */
-.stream-toggle {
+/* 功能开关区域样式 */
+.feature-toggles {
+  display: flex;
+  gap: 24px;
   margin: 16px 0;
   padding: 12px 16px;
-  /* 增加内边距，使其更饱满 */
   background-color: #ffffff;
-  /* 使用纯白背景，更突出 */
   border-radius: 8px;
-  /* 增加圆角 */
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+}
+
+/* 单个开关项样式 */
+.toggle-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
-  /* 添加非常轻微的阴影 */
 }
 
 .mode-info {
@@ -306,4 +308,24 @@ textarea:focus {
 .callout-danger {
   background-color: #fef2f2;
   border-color: #ef4444;
+}
+
+/* 代码块行高亮样式 */
+pre code[data-highlight-lines] {
+  position: relative;
+  background-color: #f1f5f9;
+  border-radius: 12px;
+}
+
+pre code[data-highlight-lines]::before {
+  content: attr(data-highlight-lines);
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+pre code[data-highlight-lines] .highlight-line {
+  background-color: rgba(255, 255, 0, 0.2);
 }

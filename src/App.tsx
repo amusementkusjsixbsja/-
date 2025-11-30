@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { markdownToHtml } from './utils/markdown';
+import { markdownToHtml } from './utils/index';
 import { StreamController } from './utils/streamController';
 import './App.css';
 
@@ -19,16 +19,20 @@ function App() {
       acceleration: 0.96
     });
 
-    // 流式输出回调：逐字更新预览区（基于当前流内容）
-    streamControllerRef.current.onChar = async (char) => {
-      currentStreamContentRef.current += char;
-      const html = await markdownToHtml(currentStreamContentRef.current);
-      setPreviewContent(html);
-    };
-
     return () => {
       streamControllerRef.current?.stop();
     };
+  }, []);
+
+  // 更新流式输出回调
+  useEffect(() => {
+    if (streamControllerRef.current) {
+      streamControllerRef.current.onChar = async (char) => {
+        currentStreamContentRef.current += char;
+        const html = await markdownToHtml(currentStreamContentRef.current);
+        setPreviewContent(html);
+      };
+    }
   }, []);
 
   // 流式开关切换时：重置状态（关键修复）
@@ -74,22 +78,25 @@ function App() {
   return (
     <div className="app">
       <div className="header">
-      <h1>Markdown 渲染器（流式开关）</h1>
-      <p>by:前端2组b队</p>
-    </div>
-      {/* 流式渲染开关 */}
-      <div className="stream-toggle">
-        <label>
-          <input
-            type="checkbox"
-            checked={isStreamMode}
-            onChange={(e) => setIsStreamMode(e.target.checked)}
-          />
-          启用流式渲染
-        </label>
-        <span className="mode-info">
-          {isStreamMode ? '（编辑区输入将逐字渲染）' : '（编辑区输入将实时完整渲染）'}
-        </span>
+        <h1>Markdown 渲染器（流式开关）</h1>
+        <p>by:前端2组b队</p>
+      </div>
+      {/* 功能开关区域 */}
+      <div className="feature-toggles">
+        {/* 流式渲染开关 */}
+        <div className="toggle-item">
+          <label>
+            <input
+              type="checkbox"
+              checked={isStreamMode}
+              onChange={(e) => setIsStreamMode(e.target.checked)}
+            />
+            启用流式渲染
+          </label>
+          <span className="mode-info">
+            {isStreamMode ? '（编辑区输入将逐字渲染）' : '（编辑区输入将实时完整渲染）'}
+          </span>
+        </div>
       </div>
 
       <div className="container">
