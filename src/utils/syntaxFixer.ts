@@ -498,188 +498,189 @@ private fixMathFormulasWithDiff(markdown: string, escapePositions: number[]): { 
   return { fixed: fixedMarkdown, addedChars: allAddedChars };
 }
 
-// 保留原有的 isEscaped 方法（确保依赖可用）
+/**
+ * 查找未闭合的括号匹配（支持跨行未闭合场景）
+ * @param markdown 原始文本
+ * @param prefixRegex 前缀正则表达式（用于区分链接和图片）
+ * @param escapePositions 转义符位置数组
+ * @returns 匹配结果数组
+ */
+private findUnclosedBrackets(
+  markdown: string, 
+  prefixRegex: string, 
+  escapePositions: number[]
+): Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> {
+  const matches: Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> = [];
+  
+  // ========== 1. 匹配未闭合的 [text](url / ![alt](url（支持跨行） ==========
+  // 正则说明：
+  // ${prefixRegex} - 前缀（链接：(?<!\\\\|!)，图片：!）
+  // \[(.*?)(?<!\\\\)\] - 匹配[]包裹的文本（排除转义]）
+  // \s*\( - 匹配括号前的空白+左括号
+  // ([\s\S]*?) - 匹配括号内任意内容（包括换行，支持跨行）
+  // (?=\n|$| |\t) - 匹配到URL结束位置（换行/文本末尾/空格/制表符前）
+  // (?!\)) - 确保后面没有闭合)
+  const unclosedRegex = new RegExp(
+    `${prefixRegex}\\[(.+?)(?<!\\\\)\\]\\s*\\(([\\s\\S]*?)(?=\\n|$| |\\t)(?!\\))`,
+    'g'
+  );
+
+  let match: RegExpExecArray | null;
+  while ((match = unclosedRegex.exec(markdown)) !== null) {
+    // 检查 [ 是否被转义
+    const bracketStartPos = match.index + prefixRegex.length;
+    if (this.isEscaped(bracketStartPos, escapePositions)) continue;
+
+    // 确定未闭合链接/图片的实际结束位置（URL最后一个字符的位置）
+    const actualEnd = match.index + match[0].length;
+    
+    // 验证：向后查找直到文本结束/下一个语法开始，确认无)
+    const afterMatch = markdown.slice(actualEnd);
+    const nextCloseParen = afterMatch.indexOf(')');
+    const nextSyntax = afterMatch.search(/\[|!|\$|`|```/); // 下一个Markdown语法开始
+    // 如果)在其他语法之后，视为无有效闭合
+    const hasValidClose = nextCloseParen !== -1 && (nextSyntax === -1 || nextCloseParen < nextSyntax);
+
+    if (!hasValidClose) {
+      matches.push({
+        start: match.index,
+        end: actualEnd, // 实际结束位置（URL最后一个字符）
+        type: 'unclosed'
+      });
+    }
+  }
+
+  // ========== 2. 匹配仅含[]无()的场景（支持跨行） ==========
+  const onlyBracketRegex = new RegExp(
+    `${prefixRegex}\\[(.+?)(?<!\\\\)\\](?!\\s*\\()`,
+    'g'
+  );
+
+  while ((match = onlyBracketRegex.exec(markdown)) !== null) {
+    if (!match) continue;
+    
+    // 检查 [ 是否被转义
+    const bracketStartPos = match.index + prefixRegex.length;
+    if (this.isEscaped(bracketStartPos, escapePositions)) continue;
+
+    // 排除与unclosed重复的匹配
+    const isDuplicate = matches.some(m =>
+      m.start <= match.index && m.end >= match.index + match[0].length
+    );
+    if (!isDuplicate) {
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        type: 'onlyBracket'
+      });
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * 修复版链接修复：支持跨行未闭合链接补全)
+ * @param markdown 原始文本
+ * @param escapePositions 转义符位置数组
+ * @returns 修复后的文本和添加的字符信息
+ */
+private fixLinksWithDiff(
+  markdown: string, 
+  escapePositions: number[]
+): { fixed: string; addedChars: { char: string; position: number }[] } {
+  if (!this.options?.links?.enabled) {
+    return { fixed: markdown, addedChars: [] };
+  }
+
+  let fixedMarkdown = markdown;
+  const addedChars: { char: string; position: number }[] = [];
+  let offset = 0;
+
+  // 链接前缀：排除转义的[和图片前缀!
+  const linkPrefix = '(?<!\\\\|!)';
+  const matches = this.findUnclosedBrackets(fixedMarkdown, linkPrefix, escapePositions);
+
+  // 按结束位置降序排序（从后往前修复，避免位置偏移）
+  matches.sort((a, b) => b.end - a.end);
+
+  // 核心修复逻辑：无论是否跨行，都在URL末尾添加)
+  matches.forEach(matchItem => {
+    const actualEnd = matchItem.end + offset;
+    if (actualEnd > fixedMarkdown.length) return;
+
+    if (matchItem.type === 'unclosed') {
+      // 仅在URL末尾添加)（核心需求，支持跨行）
+      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
+      addedChars.push({ char: ')', position: actualEnd });
+      offset += 1;
+    } else if (matchItem.type === 'onlyBracket') {
+      // 补充()，支持自动填充空URL
+      const fillChar = this.options.links.autoFillEmptyUrl ? '#' : '';
+      const addStr = `(${fillChar})`;
+      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
+      addedChars.push({ char: '(', position: actualEnd });
+      addedChars.push({ char: ')', position: actualEnd + 1 });
+      offset += 2;
+    }
+  });
+
+  return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
+}
+
+/**
+ * 修复版图片修复：支持跨行未闭合图片补全)
+ * @param markdown 原始文本
+ * @param escapePositions 转义符位置数组
+ * @returns 修复后的文本和添加的字符信息
+ */
+private fixImagesWithDiff(
+  markdown: string, 
+  escapePositions: number[]
+): { fixed: string; addedChars: { char: string; position: number }[] } {
+  if (!this.options?.images?.enabled) {
+    return { fixed: markdown, addedChars: [] };
+  }
+
+  let fixedMarkdown = markdown;
+  const addedChars: { char: string; position: number }[] = [];
+  let offset = 0;
+
+  // 图片前缀为!
+  const imagePrefix = '!';
+  const matches = this.findUnclosedBrackets(fixedMarkdown, imagePrefix, escapePositions);
+
+  // 按结束位置降序排序
+  matches.sort((a, b) => b.end - a.end);
+
+  // 核心修复逻辑：支持跨行补全)
+  matches.forEach(matchItem => {
+    const actualEnd = matchItem.end + offset;
+    if (actualEnd > fixedMarkdown.length) return;
+
+    if (matchItem.type === 'unclosed') {
+      // 仅在URL末尾添加)
+      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
+      addedChars.push({ char: ')', position: actualEnd });
+      offset += 1;
+    } else if (matchItem.type === 'onlyBracket') {
+      // 继承链接规则填充空URL
+      const fillChar = this.options.images.inheritLinkRules && this.options.links.autoFillEmptyUrl ? '#' : '';
+      const addStr = `(${fillChar})`;
+      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
+      addedChars.push({ char: '(', position: actualEnd });
+      addedChars.push({ char: ')', position: actualEnd + 1 });
+      offset += 2;
+    }
+  });
+
+  return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
+}
+
+// 保留原有的 isEscaped 方法
 private isEscaped(position: number, escapePositions: number[]): boolean {
   return escapePositions.includes(position);
 }
-
-  /**
-   * 查找未闭合的括号匹配（核心重构：支持全量匹配未闭合链接/图片）
-   * @param markdown 原始文本
-   * @param prefixRegex 前缀正则表达式（用于区分链接和图片）
-   * @param escapePositions 转义符位置数组
-   * @returns 匹配结果数组
-   */
-  private findUnclosedBrackets(
-    markdown: string, 
-    prefixRegex: string, 
-    escapePositions: number[]
-  ): Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> {
-    const matches: Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> = [];
-    let match: RegExpExecArray | null;
-
-    // 核心修改1：扩大未闭合链接匹配范围，支持任意位置的未闭合(
-    // 正则说明：
-    // ${prefixRegex} - 前缀（链接：(?<!\\\\|!)，图片：!）
-    // \[(.*?)(?<!\\\\)\] - 匹配[]包裹的文本（排除转义]）
-    // \s*\( - 匹配括号前的空白+左括号
-    // ([^)]*) - 匹配括号内任意内容（无闭合)）
-    // (?!\)) - 确保后面没有闭合)
-    const unclosedRegexPattern = `${prefixRegex}\\[(.+?)(?<!\\\\)\\]\\s*\\(([^)]*)(?!\\))`;
-    const unclosedRegex = new RegExp(unclosedRegexPattern, 'g');
-    
-    while ((match = unclosedRegex.exec(markdown)) !== null) {
-      // 检查是否被转义
-      const bracketStartPos = match.index + prefixRegex.length; // [ 的位置
-      const isEscaped = this.isEscaped(bracketStartPos, escapePositions);
-      if (isEscaped) continue;
-
-      // 验证是否真的未闭合（向后查找直到换行/文本结束，确认无)）
-      const afterMatch = markdown.slice(match.index + match[0].length);
-      const nextCloseParen = afterMatch.indexOf(')');
-      const nextNewline = afterMatch.indexOf('\n');
-      // 如果)在换行后，视为未闭合
-      const hasValidClose = nextCloseParen !== -1 && (nextNewline === -1 || nextCloseParen < nextNewline);
-      
-      if (!hasValidClose) {
-        matches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          type: 'unclosed'
-        });
-      }
-    }
-
-    // 核心修改2：修复仅含括号正则的转义和匹配逻辑
-    const onlyBracketRegexPattern = `${prefixRegex}\\[(.+?)(?<!\\\\)\\](?!\\s*\\()`;
-    const onlyBracketRegex = new RegExp(onlyBracketRegexPattern, 'g');
-    
-    while ((match = onlyBracketRegex.exec(markdown)) !== null) {
-      if (!match) continue;
-      
-      // 检查是否被转义
-      const bracketStartPos = match.index + prefixRegex.length;
-      const isEscaped = this.isEscaped(bracketStartPos, escapePositions);
-      if (isEscaped) continue;
-
-      // 排除重复匹配
-      const isDuplicate = matches.some(m =>
-        m.start <= match.index && m.end >= match.index + match[0].length
-      );
-      if (!isDuplicate) {
-        matches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          type: 'onlyBracket'
-        });
-      }
-    }
-
-    return matches;
-  }
-
-  /**
-   * 修复版链接修复：确保所有未闭合的[text](url)都补充)（支持全量修复）
-   * @param markdown 原始文本
-   * @param escapePositions 转义符位置数组
-   * @returns 修复后的文本和添加的字符信息
-   */
-  private fixLinksWithDiff(
-    markdown: string, 
-    escapePositions: number[]
-  ): { fixed: string; addedChars: { char: string; position: number }[] } {
-    if (!this.options?.links?.enabled) {
-      return { fixed: markdown, addedChars: [] };
-    }
-
-    let fixedMarkdown = markdown;
-    const addedChars: { char: string; position: number }[] = [];
-    let offset = 0;
-
-    // 链接前缀：排除转义的[和图片前缀!
-    const linkPrefix = '(?<!\\\\|!)';
-    const matches = this.findUnclosedBrackets(fixedMarkdown, linkPrefix, escapePositions);
-
-    // 核心修改3：去重并按结束位置降序排序（避免重复修复）
-    const uniqueMatches = Array.from(new Map(
-      matches.map(m => [m.end, m])
-    )).map(([_, m]) => m);
-    uniqueMatches.sort((a, b) => b.end - a.end);
-
-    // 从后往前修复
-    uniqueMatches.forEach(matchItem => {
-      const actualEnd = matchItem.end + offset;
-      if (actualEnd > fixedMarkdown.length) return;
-
-      if (matchItem.type === 'unclosed') {
-        // 补充闭合的)
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: ')', position: actualEnd });
-        offset += 1;
-      } else if (matchItem.type === 'onlyBracket') {
-        // 补充()，支持自动填充空URL
-        const fillChar = this.options.links.autoFillEmptyUrl ? '\#' : '';
-        const addStr = `(${fillChar})`;
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: '(', position: actualEnd });
-        addedChars.push({ char: ')', position: actualEnd + 1 });
-        offset += 2;
-      }
-    });
-
-    return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
-  }
-
-  /**
-   * 修复版图片修复：确保所有未闭合的![alt](url)都补充)（支持全量修复）
-   * @param markdown 原始文本
-   * @param escapePositions 转义符位置数组
-   * @returns 修复后的文本和添加的字符信息
-   */
-  private fixImagesWithDiff(
-    markdown: string, 
-    escapePositions: number[]
-  ): { fixed: string; addedChars: { char: string; position: number }[] } {
-    if (!this.options?.images?.enabled) {
-      return { fixed: markdown, addedChars: [] };
-    }
-
-    let fixedMarkdown = markdown;
-    const addedChars: { char: string; position: number }[] = [];
-    let offset = 0;
-
-    // 图片前缀为!
-    const imagePrefix = '!';
-    const matches = this.findUnclosedBrackets(fixedMarkdown, imagePrefix, escapePositions);
-
-    // 去重并排序
-    const uniqueMatches = Array.from(new Map(
-      matches.map(m => [m.end, m])
-    )).map(([_, m]) => m);
-    uniqueMatches.sort((a, b) => b.end - a.end);
-
-    // 从后往前修复
-    uniqueMatches.forEach(matchItem => {
-      const actualEnd = matchItem.end + offset;
-      if (actualEnd > fixedMarkdown.length) return;
-
-      if (matchItem.type === 'unclosed') {
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: ')', position: actualEnd });
-        offset += 1;
-      } else if (matchItem.type === 'onlyBracket') {
-        // 继承链接规则填充空URL
-        const fillChar = this.options.images.inheritLinkRules && this.options.links.autoFillEmptyUrl ? '\#' : '';
-        const addStr = `(${fillChar})`;
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: '(', position: actualEnd });
-        addedChars.push({ char: ')', position: actualEnd + 1 });
-        offset += 2;
-      }
-    });
-
-    return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
-  }
 
   // 表格修复
   private fixTablesWithDiff(markdown: string): { fixed: string; addedChars: { char: string; position: number }[] } {
