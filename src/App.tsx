@@ -12,6 +12,7 @@ function App() {
 
   const streamControllerRef = useRef<StreamController | null>(null);
   const currentStreamContentRef = useRef<string>(''); // 记录当前流式渲染的内容（而非完整编辑区内容）
+  const previewRef = useRef<HTMLDivElement>(null); // 预览区容器Ref
 
   // 初始化流式控制器
   useEffect(() => {
@@ -97,6 +98,40 @@ function App() {
     }
   };
 
+  // 拦截脚注点击，实现预览区内部滚动
+  useEffect(() => {
+    const previewContainer = previewRef.current;
+    if (!previewContainer) return;
+
+    // 监听预览区内的所有链接点击
+    const handleLinkClick = (e: MouseEvent) => {
+      const target = e.target as HTMLAnchorElement;
+      // 仅处理脚注链接（href 以 # 开头，指向脚注锚点）
+      if (target.tagName === 'A') {
+        const href = target.getAttribute('href');
+        if (href && href.startsWith('#')) {
+          e.preventDefault(); // 阻止全局锚点跳转
+          const footnoteId = href.slice(1); // 去掉 # 取 id
+          const targetElement = previewContainer.querySelector(`#${footnoteId}`);
+
+          if (targetElement) {
+            // 预览区内部滚动到目标元素
+            targetElement.scrollIntoView({
+              behavior: 'smooth', // 平滑滚动
+              block: 'end', // 滚动到元素底部（对应脚注位置）
+              inline: 'nearest'
+            });
+          }
+        }
+      }
+    };
+
+    previewContainer.addEventListener('click', handleLinkClick);
+    return () => {
+      previewContainer.removeEventListener('click', handleLinkClick);
+    };
+  }, []); // 仅在组件挂载时绑定一次事件
+
   return (
     <div className="app">
       <div className="header">
@@ -152,8 +187,8 @@ function App() {
           />
         </div>
 
-        {/* 预览区 */}
-        <div className="preview">
+        {/* 预览区（关键：添加 ref 和独立滚动样式） */}
+        <div className="preview" ref={previewRef}>
           <h2>预览区</h2>
           <div
             className="preview-content"

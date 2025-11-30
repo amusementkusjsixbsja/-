@@ -719,7 +719,7 @@ export class MarkdownSyntaxFixer {
     return escapePositions.includes(position);
   }
 
-  // 表格修复（仅修复缺少分隔行的合法表格，不干扰正常表格）
+// 表格修复（仅修复缺少分隔行的合法表格，不干扰正常表格）
   private fixTablesWithDiff(markdown: string): { fixed: string; addedChars: { char: string; position: number }[] } {
     if (!this.options?.tables?.enabled) {
       return { fixed: markdown, addedChars: [] };

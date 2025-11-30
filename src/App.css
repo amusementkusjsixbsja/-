@@ -68,6 +68,7 @@ h2 {
   background-color: #ffffff;
   border-radius: 8px;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+  align-items: center;
 }
 
 /* 单个开关项样式 */
@@ -88,7 +89,8 @@ h2 {
   gap: 24px;
   /* 增加编辑器和预览区的间距 */
   margin-top: 20px;
-  height: 80vh;
+  height: calc(100vh - 150px);
+  /* 固定容器高度，避免页面整体滚动 */
 }
 
 .editor,
