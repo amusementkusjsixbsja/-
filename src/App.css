@@ -377,6 +377,16 @@ pre code[data-highlight-lines] .highlight-line {
   font-size: 0.9em;
 }
 
+/* 图片样式 */
+.preview-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 16px 0;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
 /* Spoiler 样式 */
 .spoiler {
   background-color: #f8fafc;

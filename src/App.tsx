@@ -101,7 +101,7 @@ function App() {
     <div className="app">
       <div className="header">
         <h1>Markdown 渲染器（流式开关）</h1>
-        <p>by:前端2组b队</p>
+        <p>by:王昆尧</p>
       </div>
       {/* 功能开关区域 */}
       <div className="feature-toggles">

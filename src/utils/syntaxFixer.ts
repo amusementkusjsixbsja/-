@@ -128,13 +128,13 @@ export class MarkdownSyntaxFixer {
     }
 
     if (this.options.links.enabled) {
-      const linksResult = this.fixLinksWithDiff(fixedMarkdown, escapePositions);
+      const linksResult = this.fixLinksWithDiff(fixedMarkdown);
       fixedMarkdown = linksResult.fixed;
       addedChars.push(...linksResult.addedChars);
     }
 
     if (this.options.images.enabled) {
-      const imagesResult = this.fixImagesWithDiff(fixedMarkdown, escapePositions);
+      const imagesResult = this.fixImagesWithDiff(fixedMarkdown);
       fixedMarkdown = imagesResult.fixed;
       addedChars.push(...imagesResult.addedChars);
     }
@@ -182,268 +182,268 @@ export class MarkdownSyntaxFixer {
     return positions;
   }
 
-/**
- * 代码块修复：逐行追踪（带空值防护+中文行判断），按行内规则补全未闭合代码块
- * @param markdown 原始 Markdown 文本
- * @param escapePositions 转义符（\）位置数组
- * @returns 修复后的文本 + 添加的字符信息
- */
-private fixCodeBlocksWithDiff(
-  markdown: string,
-  escapePositions: number[]
-): { fixed: string; addedChars: { char: string; position: number }[] } {
-  // 基础防护：空文本直接返回
-  if (!this.options.codeBlocks.enabled || !markdown) {
-    return { fixed: markdown || '', addedChars: [] };
-  }
-
-  const lines = markdown.split('\n');
-  // 过滤空值：确保行数组中无 undefined/null
-  const fixedLines = lines.map(line => line || '').filter(line => line !== undefined);
-  const addedChars: { char: string; position: number }[] = [];
-  let inCodeBlock = false; // 是否处于未闭合代码块中
-  let emptyLineCount = 0; // 连续空白行计数（仅在代码块内生效）
-  let blockStartLine = -1; // 当前代码块起始行号
-  let lineOffset = 0; // 因插入行导致的行号偏移量
-
-  // 辅助方法：判断行是否为空白行（仅含空格/制表符）- 增加空值防护
-  const isEmptyLine = (line: string | undefined): boolean => {
-    if (!line) return true; // undefined/null 视为空白行
-    return line.trim() === '';
-  };
-
-  // 辅助方法：判断行是否为```+语言标记行 - 增加空值防护
-  const isCodeBlockWithLang = (line: string | undefined): boolean => {
-    if (!line) return false; // 空行直接返回false
-    const trimmed = line.trim();
-    // 匹配```开头且后面跟语言（非空），排除纯```
-    return trimmed.startsWith('```') && trimmed.length > 3 && !/^```\s*$/.test(trimmed);
-  };
-
-  // 新增辅助方法：判断行是否以中文开头（含全角标点/中文文字）
-  const isStartWithChinese = (line: string | undefined): boolean => {
-    if (!line) return false;
-    const trimmedLine = line.trim(); // 先去除首尾空白
-    if (trimmedLine === '') return false; // 空白行不判断
-    // 匹配中文开头：[\u4e00-\u9fa5] 匹配中文，[\uff00-\uffef] 匹配全角标点
-    const chineseStartRegex = /^[\u4e00-\u9fa5\uff00-\uffef]/;
-    return chineseStartRegex.test(trimmedLine);
-  };
-
-  // 辅助方法：计算指定行的全局字符偏移量 - 增加边界防护
-  const calculateCharOffset = (targetLine: number): number => {
-    if (targetLine < 0 || targetLine >= fixedLines.length) return 0;
-    let offset = 0;
-    for (let i = 0; i < targetLine; i++) {
-      // 空值防护：确保行存在且为字符串
-      const line = fixedLines[i] || '';
-      offset += line.length + 1; // 行长度 + 换行符
-    }
-    return offset;
-  };
-
-  // 步骤1：逐行扫描（从```开始追踪）- 增加边界检查
-  for (let i = 0; i < fixedLines.length; i++) {
-    const currentLineIdx = i + lineOffset;
-    // 边界防护：超出数组长度则终止循环
-    if (currentLineIdx >= fixedLines.length) break;
-    
-    // 空值防护：确保行是字符串类型
-    const line = fixedLines[currentLineIdx] || '';
-    const trimmedLine = line.trim();
-
-    // 跳过转义的```标记（不参与代码块状态判断）
-    const backtickPos = line.indexOf('```');
-    const charPos = calculateCharOffset(currentLineIdx) + (backtickPos >= 0 ? backtickPos : 0);
-    const isEscapedBacktick = backtickPos !== -1 && this.isEscaped(charPos, escapePositions);
-
-    // 1. 检测代码块起始标记（非转义的```）
-    if (!inCodeBlock && trimmedLine.startsWith('```') && !isEscapedBacktick) {
-      inCodeBlock = true;
-      blockStartLine = currentLineIdx;
-      emptyLineCount = 0; // 重置空白行计数
-      continue;
+  /**
+   * 代码块修复：逐行追踪（带空值防护+中文行判断），按行内规则补全未闭合代码块
+   * @param markdown 原始 Markdown 文本
+   * @param escapePositions 转义符（\）位置数组
+   * @returns 修复后的文本 + 添加的字符信息
+   */
+  private fixCodeBlocksWithDiff(
+    markdown: string,
+    escapePositions: number[]
+  ): { fixed: string; addedChars: { char: string; position: number }[] } {
+    // 基础防护：空文本直接返回
+    if (!this.options.codeBlocks.enabled || !markdown) {
+      return { fixed: markdown || '', addedChars: [] };
     }
 
-    // 2. 仅在代码块内执行逐行判断逻辑
-    if (inCodeBlock) {
-      // 新增规则：遇到以中文开头的行 → 在上一行插入```闭合代码块
-      if (isStartWithChinese(line)) {
-        const insertLineIdx = currentLineIdx;
-        // 边界防护：插入位置不越界
-        if (insertLineIdx >= 0 && insertLineIdx <= fixedLines.length) {
-          fixedLines.splice(insertLineIdx, 0, '```');
-          // 记录添加的字符位置
-          const charOffset = calculateCharOffset(insertLineIdx);
-          addedChars.push(
-            { char: '`', position: charOffset },
-            { char: '`', position: charOffset + 1 },
-            { char: '`', position: charOffset + 2 }
-          );
-          // 更新状态：退出代码块
-          lineOffset += 1;
-          inCodeBlock = false;
-          emptyLineCount = 0;
-          blockStartLine = -1;
-        }
-        continue; // 处理完中文行后跳过后续判断
+    const lines = markdown.split('\n');
+    // 过滤空值：确保行数组中无 undefined/null
+    const fixedLines = lines.map(line => line || '').filter(line => line !== undefined);
+    const addedChars: { char: string; position: number }[] = [];
+    let inCodeBlock = false; // 是否处于未闭合代码块中
+    let emptyLineCount = 0; // 连续空白行计数（仅在代码块内生效）
+    let blockStartLine = -1; // 当前代码块起始行号
+    let lineOffset = 0; // 因插入行导致的行号偏移量
+
+    // 辅助方法：判断行是否为空白行（仅含空格/制表符）- 增加空值防护
+    const isEmptyLine = (line: string | undefined): boolean => {
+      if (!line) return true; // undefined/null 视为空白行
+      return line.trim() === '';
+    };
+
+    // 辅助方法：判断行是否为```+语言标记行 - 增加空值防护
+    const isCodeBlockWithLang = (line: string | undefined): boolean => {
+      if (!line) return false; // 空行直接返回false
+      const trimmed = line.trim();
+      // 匹配```开头且后面跟语言（非空），排除纯```
+      return trimmed.startsWith('```') && trimmed.length > 3 && !/^```\s*$/.test(trimmed);
+    };
+
+    // 新增辅助方法：判断行是否以中文开头（含全角标点/中文文字）
+    const isStartWithChinese = (line: string | undefined): boolean => {
+      if (!line) return false;
+      const trimmedLine = line.trim(); // 先去除首尾空白
+      if (trimmedLine === '') return false; // 空白行不判断
+      // 匹配中文开头：[\u4e00-\u9fa5] 匹配中文，[\uff00-\uffef] 匹配全角标点
+      const chineseStartRegex = /^[\u4e00-\u9fa5\uff00-\uffef]/;
+      return chineseStartRegex.test(trimmedLine);
+    };
+
+    // 辅助方法：计算指定行的全局字符偏移量 - 增加边界防护
+    const calculateCharOffset = (targetLine: number): number => {
+      if (targetLine < 0 || targetLine >= fixedLines.length) return 0;
+      let offset = 0;
+      for (let i = 0; i < targetLine; i++) {
+        // 空值防护：确保行存在且为字符串
+        const line = fixedLines[i] || '';
+        offset += line.length + 1; // 行长度 + 换行符
       }
+      return offset;
+    };
 
-      // 原有规则2：遇到```+语言 → 在上一行插入```闭合当前块
-      if (isCodeBlockWithLang(line) && !isEscapedBacktick) {
-        const insertLineIdx = currentLineIdx;
-        // 边界防护：插入位置不越界
-        if (insertLineIdx >= 0 && insertLineIdx <= fixedLines.length) {
-          fixedLines.splice(insertLineIdx, 0, '```');
-          // 记录添加的字符位置
-          const charOffset = calculateCharOffset(insertLineIdx);
-          addedChars.push(
-            { char: '`', position: charOffset },
-            { char: '`', position: charOffset + 1 },
-            { char: '`', position: charOffset + 2 }
-          );
-          // 更新状态：当前行变为新代码块起始
-          lineOffset += 1; // 插入行导致后续行偏移+1
-          inCodeBlock = true;
-          blockStartLine = currentLineIdx + 1; // 新代码块起始行（插入行的下一行）
-          emptyLineCount = 0;
-        }
+    // 步骤1：逐行扫描（从```开始追踪）- 增加边界检查
+    for (let i = 0; i < fixedLines.length; i++) {
+      const currentLineIdx = i + lineOffset;
+      // 边界防护：超出数组长度则终止循环
+      if (currentLineIdx >= fixedLines.length) break;
+
+      // 空值防护：确保行是字符串类型
+      const line = fixedLines[currentLineIdx] || '';
+      const trimmedLine = line.trim();
+
+      // 跳过转义的```标记（不参与代码块状态判断）
+      const backtickPos = line.indexOf('```');
+      const charPos = calculateCharOffset(currentLineIdx) + (backtickPos >= 0 ? backtickPos : 0);
+      const isEscapedBacktick = backtickPos !== -1 && this.isEscaped(charPos, escapePositions);
+
+      // 1. 检测代码块起始标记（非转义的```）
+      if (!inCodeBlock && trimmedLine.startsWith('```') && !isEscapedBacktick) {
+        inCodeBlock = true;
+        blockStartLine = currentLineIdx;
+        emptyLineCount = 0; // 重置空白行计数
         continue;
       }
 
-      // 原有规则1：连续两行空白 → 插入```闭合
-      if (isEmptyLine(line)) {
-        emptyLineCount += 1;
-        // 连续两行空白，在第二行空白行上方插入```
-        if (emptyLineCount === 2) {
+      // 2. 仅在代码块内执行逐行判断逻辑
+      if (inCodeBlock) {
+        // 新增规则：遇到以中文开头的行 → 在上一行插入```闭合代码块
+        if (isStartWithChinese(line)) {
           const insertLineIdx = currentLineIdx;
           // 边界防护：插入位置不越界
           if (insertLineIdx >= 0 && insertLineIdx <= fixedLines.length) {
             fixedLines.splice(insertLineIdx, 0, '```');
-            // 记录字符位置
+            // 记录添加的字符位置
             const charOffset = calculateCharOffset(insertLineIdx);
             addedChars.push(
               { char: '`', position: charOffset },
               { char: '`', position: charOffset + 1 },
               { char: '`', position: charOffset + 2 }
             );
-            // 更新状态
+            // 更新状态：退出代码块
             lineOffset += 1;
             inCodeBlock = false;
             emptyLineCount = 0;
             blockStartLine = -1;
           }
+          continue; // 处理完中文行后跳过后续判断
+        }
+
+        // 原有规则2：遇到```+语言 → 在上一行插入```闭合当前块
+        if (isCodeBlockWithLang(line) && !isEscapedBacktick) {
+          const insertLineIdx = currentLineIdx;
+          // 边界防护：插入位置不越界
+          if (insertLineIdx >= 0 && insertLineIdx <= fixedLines.length) {
+            fixedLines.splice(insertLineIdx, 0, '```');
+            // 记录添加的字符位置
+            const charOffset = calculateCharOffset(insertLineIdx);
+            addedChars.push(
+              { char: '`', position: charOffset },
+              { char: '`', position: charOffset + 1 },
+              { char: '`', position: charOffset + 2 }
+            );
+            // 更新状态：当前行变为新代码块起始
+            lineOffset += 1; // 插入行导致后续行偏移+1
+            inCodeBlock = true;
+            blockStartLine = currentLineIdx + 1; // 新代码块起始行（插入行的下一行）
+            emptyLineCount = 0;
+          }
+          continue;
+        }
+
+        // 原有规则1：连续两行空白 → 插入```闭合
+        if (isEmptyLine(line)) {
+          emptyLineCount += 1;
+          // 连续两行空白，在第二行空白行上方插入```
+          if (emptyLineCount === 2) {
+            const insertLineIdx = currentLineIdx;
+            // 边界防护：插入位置不越界
+            if (insertLineIdx >= 0 && insertLineIdx <= fixedLines.length) {
+              fixedLines.splice(insertLineIdx, 0, '```');
+              // 记录字符位置
+              const charOffset = calculateCharOffset(insertLineIdx);
+              addedChars.push(
+                { char: '`', position: charOffset },
+                { char: '`', position: charOffset + 1 },
+                { char: '`', position: charOffset + 2 }
+              );
+              // 更新状态
+              lineOffset += 1;
+              inCodeBlock = false;
+              emptyLineCount = 0;
+              blockStartLine = -1;
+            }
+          }
+        } else {
+          // 非空白行，重置连续空白行计数
+          emptyLineCount = 0;
+        }
+
+        // 原有规则：检测正常的```闭合标记（无语言）→ 退出代码块
+        if (trimmedLine === '```' && !isEscapedBacktick) {
+          inCodeBlock = false;
+          emptyLineCount = 0;
+          blockStartLine = -1;
+        }
+      }
+    }
+
+    // 原有规则3：到结尾仍未闭合 → 在最后补```
+    if (inCodeBlock) {
+      const insertLineIdx = fixedLines.length;
+      fixedLines.push('```');
+      // 计算插入位置的字符偏移
+      const charOffset = calculateCharOffset(insertLineIdx);
+      addedChars.push(
+        { char: '`', position: charOffset },
+        { char: '`', position: charOffset + 1 },
+        { char: '`', position: charOffset + 2 }
+      );
+    }
+
+    const fixedMarkdown = fixedLines.join('\n');
+    return { fixed: fixedMarkdown, addedChars };
+  }
+
+
+  /**
+   * 行内代码修复（`）：精准补全“单独的`”，而非简单补全奇偶差
+   * @param markdown 原始文本
+   * @param escapePositions 转义符位置数组
+   * @returns 修复后的文本和添加的字符信息
+   */
+  private fixInlineCodeWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
+    if (!this.options.inlineCode.enabled) {
+      return { fixed: markdown, addedChars: [] };
+    }
+
+    const lines = markdown.split('\n');
+    const addedChars: { char: string; position: number }[] = [];
+    let globalCharOffset = 0;
+    // 标记是否处于代码块中（```包裹的区域）
+    let isInCodeBlock = false;
+
+    lines.forEach((line, lineIdx) => {
+      const lineStartPos = globalCharOffset;
+      const lineEndPos = lineStartPos + line.length;
+      let isInCode = false; // 状态机：是否处于未闭合的行内代码中
+
+      // 检查当前行是否包含代码块标记 ```，更新代码块状态
+      const trimmedLine = line.trim();
+      if (trimmedLine === '```' || trimmedLine.startsWith('```') && !trimmedLine.slice(3).includes('`')) {
+        isInCodeBlock = !isInCodeBlock;
+        // 代码块行直接跳过处理，更新偏移量
+        globalCharOffset += line.length + 1;
+        return;
+      }
+
+      // 如果处于代码块中，跳过当前行的行内代码处理
+      if (isInCodeBlock) {
+        globalCharOffset += line.length + 1;
+        return;
+      }
+
+      // 1. 逐字符扫描，追踪`的开启/闭合状态（精准定位单独`）
+      for (let charIdx = 0; charIdx < line.length; charIdx++) {
+        const char = line[charIdx];
+        if (char !== '`') continue;
+
+        const globalCharPos = lineStartPos + charIdx;
+        // 跳过转义的`
+        if (this.isEscaped(globalCharPos, escapePositions)) continue;
+
+        // 切换闭合状态：遇到未转义`，开启/关闭行内代码
+        isInCode = !isInCode;
+      }
+
+      // 2. 仅当本行存在未闭合的`（即有单独`）时，在本行末尾补`
+      if (isInCode) {
+        // 新增：统计本行未转义`的数量
+        const unescapedCount = [...line.matchAll(/`/g)].filter(m =>
+          !this.isEscaped(lineStartPos + m.index!, escapePositions)
+        ).length;
+
+        // 仅当“未闭合 + 数量=1”时补全
+        if (unescapedCount === 1) {
+          lines[lineIdx] = line + '`';
+          addedChars.push({
+            char: '`',
+            position: lineEndPos
+          });
+          // 更新偏移量（本行长度 + 1换行符 + 1新增`）
+          globalCharOffset += line.length + 2;
+        } else {
+          // 未闭合但数量不是1，不补全，正常更新偏移量
+          globalCharOffset += line.length + 1;
         }
       } else {
-        // 非空白行，重置连续空白行计数
-        emptyLineCount = 0;
-      }
-
-      // 原有规则：检测正常的```闭合标记（无语言）→ 退出代码块
-      if (trimmedLine === '```' && !isEscapedBacktick) {
-        inCodeBlock = false;
-        emptyLineCount = 0;
-        blockStartLine = -1;
-      }
-    }
-  }
-
-  // 原有规则3：到结尾仍未闭合 → 在最后补```
-  if (inCodeBlock) {
-    const insertLineIdx = fixedLines.length;
-    fixedLines.push('```');
-    // 计算插入位置的字符偏移
-    const charOffset = calculateCharOffset(insertLineIdx);
-    addedChars.push(
-      { char: '`', position: charOffset },
-      { char: '`', position: charOffset + 1 },
-      { char: '`', position: charOffset + 2 }
-    );
-  }
-
-  const fixedMarkdown = fixedLines.join('\n');
-  return { fixed: fixedMarkdown, addedChars };
-}
-
-
-/**
- * 行内代码修复（`）：精准补全“单独的`”，而非简单补全奇偶差
- * @param markdown 原始文本
- * @param escapePositions 转义符位置数组
- * @returns 修复后的文本和添加的字符信息
- */
-private fixInlineCodeWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
-  if (!this.options.inlineCode.enabled) {
-    return { fixed: markdown, addedChars: [] };
-  }
-
-  const lines = markdown.split('\n');
-  const addedChars: { char: string; position: number }[] = [];
-  let globalCharOffset = 0;
-  // 标记是否处于代码块中（```包裹的区域）
-  let isInCodeBlock = false;
-
-  lines.forEach((line, lineIdx) => {
-    const lineStartPos = globalCharOffset;
-    const lineEndPos = lineStartPos + line.length;
-    let isInCode = false; // 状态机：是否处于未闭合的行内代码中
-
-    // 检查当前行是否包含代码块标记 ```，更新代码块状态
-    const trimmedLine = line.trim();
-    if (trimmedLine === '```' || trimmedLine.startsWith('```') && !trimmedLine.slice(3).includes('`')) {
-      isInCodeBlock = !isInCodeBlock;
-      // 代码块行直接跳过处理，更新偏移量
-      globalCharOffset += line.length + 1;
-      return;
-    }
-
-    // 如果处于代码块中，跳过当前行的行内代码处理
-    if (isInCodeBlock) {
-      globalCharOffset += line.length + 1;
-      return;
-    }
-
-    // 1. 逐字符扫描，追踪`的开启/闭合状态（精准定位单独`）
-    for (let charIdx = 0; charIdx < line.length; charIdx++) {
-      const char = line[charIdx];
-      if (char !== '`') continue;
-
-      const globalCharPos = lineStartPos + charIdx;
-      // 跳过转义的`
-      if (this.isEscaped(globalCharPos, escapePositions)) continue;
-
-      // 切换闭合状态：遇到未转义`，开启/关闭行内代码
-      isInCode = !isInCode;
-    }
-
-    // 2. 仅当本行存在未闭合的`（即有单独`）时，在本行末尾补`
-    if (isInCode) {
-      // 新增：统计本行未转义`的数量
-      const unescapedCount = [...line.matchAll(/`/g)].filter(m =>
-        !this.isEscaped(lineStartPos + m.index!, escapePositions)
-      ).length;
-
-      // 仅当“未闭合 + 数量=1”时补全
-      if (unescapedCount === 1) {
-        lines[lineIdx] = line + '`';
-        addedChars.push({
-          char: '`',
-          position: lineEndPos
-        });
-        // 更新偏移量（本行长度 + 1换行符 + 1新增`）
-        globalCharOffset += line.length + 2;
-      } else {
-        // 未闭合但数量不是1，不补全，正常更新偏移量
         globalCharOffset += line.length + 1;
       }
-    } else {
-      globalCharOffset += line.length + 1;
-    }
-  });
+    });
 
-  const fixedMarkdown = lines.join('\n');
-  return { fixed: fixedMarkdown, addedChars };
-}
+    const fixedMarkdown = lines.join('\n');
+    return { fixed: fixedMarkdown, addedChars };
+  }
 
 
   // 数学公式修复
@@ -614,96 +614,43 @@ private fixInlineCodeWithDiff(markdown: string, escapePositions: number[]): { fi
   }
 
   /**
-   * 查找未闭合的括号匹配（支持跨行未闭合场景）
+   * 极简版：仅匹配跨行未闭合的链接/图片（[文本](URL 换行 或 ![文本](URL 换行）
    * @param markdown 原始文本
-   * @param prefixRegex 前缀正则表达式（用于区分链接和图片）
-   * @param escapePositions 转义符位置数组
+   * @param prefixRegex 前缀正则（链接：(?<!!)，图片：!）
    * @returns 匹配结果数组
    */
   private findUnclosedBrackets(
     markdown: string,
-    prefixRegex: string,
-    escapePositions: number[]
-  ): Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> {
-    const matches: Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> = [];
+    prefixRegex: string
+  ): Array<{ start: number; end: number; type: 'unclosed' }> {
+    const matches: Array<{ start: number; end: number; type: 'unclosed' }> = [];
 
-    // ========== 1. 匹配未闭合的 [text](url / ![alt](url（支持跨行） ==========
-    // 正则说明：
-    // ${prefixRegex} - 前缀（链接：(?<!\\\\|!)，图片：!）
-    // \[(.*?)(?<!\\\\)\] - 匹配[]包裹的文本（排除转义]）
-    // \s*\( - 匹配括号前的空白+左括号
-    // ([\s\S]*?) - 匹配括号内任意内容（包括换行，支持跨行）
-    // (?=\n|$| |\t) - 匹配到URL结束位置（换行/文本末尾/空格/制表符前）
-    // (?!\)) - 确保后面没有闭合)
+    // 极简正则：仅匹配 [文本](URL 换行/结尾 且无闭合) 的场景
+    // 核心匹配：前缀 + [任意文本](任意内容（含换行） + 换行/文本结尾 + 无)
     const unclosedRegex = new RegExp(
-      `${prefixRegex}\\[(.+?)(?<!\\\\)\\]\\s*\\(([\\s\\S]*?)(?=\\n|$| |\\t)(?!\\))`,
+      `${prefixRegex}\\[.+?\\]\\s*\\([\\s\\S]*?(?=\\n|$)(?!\\))`,
       'g'
     );
 
     let match: RegExpExecArray | null;
     while ((match = unclosedRegex.exec(markdown)) !== null) {
-      // 检查 [ 是否被转义
-      const bracketStartPos = match.index + prefixRegex.length;
-      if (this.isEscaped(bracketStartPos, escapePositions)) continue;
-
-      // 确定未闭合链接/图片的实际结束位置（URL最后一个字符的位置）
-      const actualEnd = match.index + match[0].length;
-
-      // 验证：向后查找直到文本结束/下一个语法开始，确认无)
-      const afterMatch = markdown.slice(actualEnd);
-      const nextCloseParen = afterMatch.indexOf(')');
-      const nextSyntax = afterMatch.search(/\[|!|\$|`|```/); // 下一个Markdown语法开始
-      // 如果)在其他语法之后，视为无有效闭合
-      const hasValidClose = nextCloseParen !== -1 && (nextSyntax === -1 || nextCloseParen < nextSyntax);
-
-      if (!hasValidClose) {
-        matches.push({
-          start: match.index,
-          end: actualEnd, // 实际结束位置（URL最后一个字符）
-          type: 'unclosed'
-        });
-      }
-    }
-
-    // ========== 2. 匹配仅含[]无()的场景（支持跨行） ==========
-    const onlyBracketRegex = new RegExp(
-      `${prefixRegex}\\[(.+?)(?<!\\\\)\\](?!\\s*\\()`,
-      'g'
-    );
-
-    while ((match = onlyBracketRegex.exec(markdown)) !== null) {
-      if (!match) continue;
-
-      // 检查 [ 是否被转义
-      const bracketStartPos = match.index + prefixRegex.length;
-      if (this.isEscaped(bracketStartPos, escapePositions)) continue;
-
-      // 排除与unclosed重复的匹配
-      const isDuplicate = matches.some(m =>
-        m.start <= match.index && m.end >= match.index + match[0].length
-      );
-      if (!isDuplicate) {
-        matches.push({
-          start: match.index,
-          end: match.index + match[0].length,
-          type: 'onlyBracket'
-        });
-      }
+      // 仅保留核心匹配结果，去掉所有复杂过滤
+      matches.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        type: 'unclosed'
+      });
     }
 
     return matches;
   }
 
   /**
-   * 修复版链接修复：支持跨行未闭合链接补全)
+   * 极简版链接修复：仅补全 [文本](URL 换行 缺失的)
    * @param markdown 原始文本
-   * @param escapePositions 转义符位置数组
    * @returns 修复后的文本和添加的字符信息
    */
-  private fixLinksWithDiff(
-    markdown: string,
-    escapePositions: number[]
-  ): { fixed: string; addedChars: { char: string; position: number }[] } {
+  private fixLinksWithDiff(markdown: string): { fixed: string; addedChars: { char: string; position: number }[] } {
     if (!this.options?.links?.enabled) {
       return { fixed: markdown, addedChars: [] };
     }
@@ -712,47 +659,32 @@ private fixInlineCodeWithDiff(markdown: string, escapePositions: number[]): { fi
     const addedChars: { char: string; position: number }[] = [];
     let offset = 0;
 
-    // 链接前缀：排除转义的[和图片前缀!
-    const linkPrefix = '(?<!\\\\|!)';
-    const matches = this.findUnclosedBrackets(fixedMarkdown, linkPrefix, escapePositions);
+    // 链接前缀：仅排除图片的!，简化逻辑
+    const linkPrefix = '(?<!!)';
+    const matches = this.findUnclosedBrackets(fixedMarkdown, linkPrefix);
 
-    // 按结束位置降序排序（从后往前修复，避免位置偏移）
+    // 从后往前修复，避免位置偏移
     matches.sort((a, b) => b.end - a.end);
 
-    // 核心修复逻辑：无论是否跨行，都在URL末尾添加)
     matches.forEach(matchItem => {
       const actualEnd = matchItem.end + offset;
       if (actualEnd > fixedMarkdown.length) return;
 
-      if (matchItem.type === 'unclosed') {
-        // 仅在URL末尾添加)（核心需求，支持跨行）
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: ')', position: actualEnd });
-        offset += 1;
-      } else if (matchItem.type === 'onlyBracket') {
-        // 补充()，支持自动填充空URL
-        const fillChar = this.options.links.autoFillEmptyUrl ? '#' : '';
-        const addStr = `(${fillChar})`;
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: '(', position: actualEnd });
-        addedChars.push({ char: ')', position: actualEnd + 1 });
-        offset += 2;
-      }
+      // 仅在URL末尾添加)
+      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
+      addedChars.push({ char: ')', position: actualEnd });
+      offset += 1;
     });
 
     return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
   }
 
   /**
-   * 修复版图片修复：支持跨行未闭合图片补全)
+   * 极简版图片修复：仅补全 ![文本](URL 换行 缺失的)
    * @param markdown 原始文本
-   * @param escapePositions 转义符位置数组
    * @returns 修复后的文本和添加的字符信息
    */
-  private fixImagesWithDiff(
-    markdown: string,
-    escapePositions: number[]
-  ): { fixed: string; addedChars: { char: string; position: number }[] } {
+  private fixImagesWithDiff(markdown: string): { fixed: string; addedChars: { char: string; position: number }[] } {
     if (!this.options?.images?.enabled) {
       return { fixed: markdown, addedChars: [] };
     }
@@ -761,142 +693,173 @@ private fixInlineCodeWithDiff(markdown: string, escapePositions: number[]): { fi
     const addedChars: { char: string; position: number }[] = [];
     let offset = 0;
 
-    // 图片前缀为!
+    // 图片前缀：仅匹配!
     const imagePrefix = '!';
-    const matches = this.findUnclosedBrackets(fixedMarkdown, imagePrefix, escapePositions);
+    const matches = this.findUnclosedBrackets(fixedMarkdown, imagePrefix);
 
-    // 按结束位置降序排序
+    // 从后往前修复
     matches.sort((a, b) => b.end - a.end);
 
-    // 核心修复逻辑：支持跨行补全)
     matches.forEach(matchItem => {
       const actualEnd = matchItem.end + offset;
       if (actualEnd > fixedMarkdown.length) return;
 
-      if (matchItem.type === 'unclosed') {
-        // 仅在URL末尾添加)
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: ')', position: actualEnd });
-        offset += 1;
-      } else if (matchItem.type === 'onlyBracket') {
-        // 继承链接规则填充空URL
-        const fillChar = this.options.images.inheritLinkRules && this.options.links.autoFillEmptyUrl ? '#' : '';
-        const addStr = `(${fillChar})`;
-        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
-        addedChars.push({ char: '(', position: actualEnd });
-        addedChars.push({ char: ')', position: actualEnd + 1 });
-        offset += 2;
-      }
+      // 仅在URL末尾添加)
+      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
+      addedChars.push({ char: ')', position: actualEnd });
+      offset += 1;
     });
 
     return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
   }
 
-  // 保留原有的 isEscaped 方法
+  // 移除冗余的isEscaped方法（若不需要转义处理）
+  // 若仍需简单转义判断，保留极简版：
   private isEscaped(position: number, escapePositions: number[]): boolean {
     return escapePositions.includes(position);
   }
 
-  // 表格修复
+  // 表格修复（仅修复缺少分隔行的合法表格，不干扰正常表格）
   private fixTablesWithDiff(markdown: string): { fixed: string; addedChars: { char: string; position: number }[] } {
-    if (!this.options.tables.enabled) {
+    if (!this.options?.tables?.enabled) {
       return { fixed: markdown, addedChars: [] };
     }
 
-    // 简单的表格修复：确保有分隔行
     const lines = markdown.split('\n');
     const addedChars: { char: string; position: number }[] = [];
+    let offset = 0; // 记录行插入导致的偏移量
 
     // 存储当前表格的信息
     interface TableInfo {
-      startIndex: number;
-      hasSeparatorLine: boolean;
+      startLineIndex: number; // 表格起始行索引
+      headerLine: string; // 表头行内容
+      separatorLineIndex: number | null; // 分隔行索引（无则为null）
+      hasDataLine: boolean; // 是否有数据行
     }
 
     let currentTable: TableInfo | null = null;
 
-    // 辅助函数：生成表格分隔行
-    const generateSeparatorLine = (headerLine: string): string => {
-      const headerColumns = headerLine.split('|').length;
-      // 生成与表头列数匹配的分隔行，例如：| --- | --- |
-      return '|' + ' --- |'.repeat(Math.max(1, headerColumns - 2));
-    };
-
-    // 辅助函数：添加表格分隔行
-    const addSeparatorLine = (table: TableInfo) => {
-      const headerLine = lines[table.startIndex];
-      const separatorLine = generateSeparatorLine(headerLine);
-
-      // 计算插入位置的字符偏移量
-      // 优化：预计算每行长度，避免重复join操作
-      let lineStartPos = 0;
-      for (let j = 0; j <= table.startIndex; j++) {
-        lineStartPos += lines[j].length + 1; // +1 表示换行符
-      }
-
-      // 插入分隔行
-      lines.splice(table.startIndex + 1, 0, separatorLine);
-
-      // 记录添加的字符
-      const separatorLineWithNewline = '\n' + separatorLine;
-      addedChars.push(...separatorLineWithNewline.split('').map((char, index) => ({
-        char,
-        position: lineStartPos + index
-      })));
-    };
-
-    // 辅助函数：检查是否为表格分隔行
+    // 辅助函数：宽松判断是否为表格分隔行
     const isSeparatorLine = (line: string): boolean => {
-      // 优化：更高效的分隔行检查
-      const trimmedLine = line.trim();
-      return trimmedLine.startsWith('|') &&
-        trimmedLine.endsWith('|') &&
-        /^\s*\|(\s*-+\s*\|)+\s*$/.test(trimmedLine);
+      const trimmed = line.trim();
+      // 只要包含 | 和 --- 就可能是分隔行
+      if (!trimmed.includes('|') || !trimmed.includes('-')) return false;
+
+      // 计算分隔行的 | 个数
+      const pipeCount = (trimmed.match(/\|/g) || []).length;
+
+      // 只要有至少一个 | 和至少一个 -，就认为是分隔行
+      // 后续会通过表格上下文进一步验证
+      return pipeCount >= 1 && trimmed.includes('-');
     };
 
-    // 辅助函数：检查是否为表格行
-    const isTableRow = (line: string): boolean => {
-      // 优化：更准确的表格行判断
-      const trimmedLine = line.trim();
-      return trimmedLine.includes('|') &&
-        !isSeparatorLine(trimmedLine) &&
-        trimmedLine.length > 2;
+    // 辅助函数：判断是否为表格行（排除纯分隔行、空行、普通文本行）
+    const isTableDataLine = (line: string): boolean => {
+      const trimmed = line.trim();
+      if (trimmed.length < 3 || !trimmed.includes('|')) return false;
+      // 排除分隔行、纯空白行
+      return !isSeparatorLine(trimmed) && trimmed !== '';
     };
 
+    // 辅助函数：生成与表头匹配的分隔行
+    const generateSeparatorLine = (headerLine: string): string => {
+      const trimmedHeader = headerLine.trim();
+      const headerColumns = trimmedHeader.slice(1, -1).split('|').map(col => col.trim());
+      // 生成对应列数的分隔行（默认左对齐，兼容GFM）
+      const separatorColumns = headerColumns.map(() => ' --- ');
+      return `| ${separatorColumns.join(' | ')} |`.replace(/\s+/g, ' ').trim();
+    };
+
+    // 辅助函数：计算行对应的字符起始位置（含换行符）
+    const getLineStartPosition = (lineIndex: number): number => {
+      let pos = 0;
+      for (let i = 0; i < lineIndex; i++) {
+        pos += lines[i].length + 1; // +1 是换行符\n
+      }
+      return pos + offset; // 叠加已插入字符的偏移
+    };
+
+    // 遍历所有行，识别表格结构
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      const trimmedLine = line.trim();
 
-      if (isTableRow(line)) {
-        // 进入或继续表格
-        if (!currentTable) {
-          // 开始新表格
-          currentTable = {
-            startIndex: i,
-            hasSeparatorLine: false
-          };
-        }
-      } else if (isSeparatorLine(line) && currentTable) {
-        // 表格分隔行
-        currentTable.hasSeparatorLine = true;
-      } else if (currentTable) {
-        // 表格结束
-        if (!currentTable.hasSeparatorLine && i - currentTable.startIndex > 1) {
-          // 缺少分隔行，添加一个
-          addSeparatorLine(currentTable);
-          // 由于插入了一行，需要调整索引
-          i++;
-        }
-        // 重置表格状态
-        currentTable = null;
+      // 1. 检测表格开始：仅当当前无表格，且行是合法的表格数据行（表头候选）
+      if (!currentTable && isTableDataLine(line)) {
+        currentTable = {
+          startLineIndex: i,
+          headerLine: line,
+          separatorLineIndex: null,
+          hasDataLine: false
+        };
       }
-    }
+      // 2. 检测表格分隔行：如果当前有表格且未找到分隔行
+      else if (currentTable && currentTable.separatorLineIndex === null && isSeparatorLine(line)) {
+        // 检查分隔行的 | 个数是否与表头行匹配
+        const headerPipeCount = (currentTable.headerLine.match(/\|/g) || []).length;
+        const separatorPipeCount = (line.match(/\|/g) || []).length;
 
-    // 处理文档末尾的表格
-    if (currentTable && !currentTable.hasSeparatorLine) {
-      addSeparatorLine(currentTable);
+        // 只要 | 个数匹配，就认为是有效分隔行
+        if (headerPipeCount === separatorPipeCount) {
+          currentTable.separatorLineIndex = i;
+        }
+      }
+      // 3. 检测表格数据行：表头后的任何表格行都是数据行（关键修复：只要是表格行就标记为数据行）
+      else if (currentTable && isTableDataLine(line)) {
+        // 只要不是表头行，且是表格数据行，就标记为有数据行
+        if (i !== currentTable.startLineIndex) {
+          currentTable.hasDataLine = true;
+        }
+      }
+
+      // 4. 检测表格结束（核心修复：放宽结束条件）
+      if (currentTable) {
+        const isCurrentLineTableRelated = isTableDataLine(line) || isSeparatorLine(line);
+        const isEmptyLine = trimmedLine === '';
+        const isEndOfDocument = i === lines.length - 1;
+
+        // 表格结束条件：
+        // - 当前行不是表格相关行（非数据行/非分隔行），无论是否为空行
+        // - 或已遍历到文档末尾
+        const isEndOfTable = !isCurrentLineTableRelated || isEndOfDocument;
+
+        if (isEndOfTable) {
+          // 仅当表格无分隔行且至少有1行数据行时，才添加分隔行
+          if (currentTable.separatorLineIndex === null && currentTable.hasDataLine) {
+            const separatorLine = generateSeparatorLine(currentTable.headerLine);
+            const insertIndex = currentTable.startLineIndex + 1; // 插入到表头下一行
+
+            // 计算插入位置的字符偏移
+            const lineStartPos = getLineStartPosition(insertIndex);
+            // 插入分隔行（带换行符）
+            lines.splice(insertIndex, 0, separatorLine);
+
+            // 记录添加的字符（换行符+分隔行内容）
+            const addedContent = `\n${separatorLine}`;
+            addedChars.push(...addedContent.split('').map((char, idx) => ({
+              char,
+              position: lineStartPos + idx
+            })));
+
+            // 更新偏移量（插入了一行，后续行索引需+1）
+            offset += addedContent.length;
+            // 遍历索引+1（跳过插入的行）
+            i++;
+          }
+
+          // 重置当前表格状态
+          currentTable = null;
+          // 如果是文档末尾，无需处理后续；如果是空行/非表格行，继续遍历
+          continue;
+        }
+      }
     }
 
     const fixedMarkdown = lines.join('\n');
+    // 按位置升序排列添加的字符（便于后续追溯）
+    addedChars.sort((a, b) => a.position - b.position);
+
     return { fixed: fixedMarkdown, addedChars };
   }
+
 }
