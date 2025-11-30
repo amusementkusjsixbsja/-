@@ -185,502 +185,469 @@ export class MarkdownSyntaxFixer {
 
   // 代码块修复
   private fixCodeBlocksWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
-  if (!this.options.codeBlocks.enabled) {
-    return { fixed: markdown, addedChars: [] };
-  }
-
-  const lines = markdown.split('\n');
-  const addedChars: { char: string; position: number }[] = [];
-  let inCodeBlock = false; // 状态机：是否在未闭合的代码块内
-  let codeBlockStartLine = -1; // 记录未闭合代码块的起始行
-  let charOffset = 0; // 字符偏移量（计算插入位置）
-
-  // 步骤1：逐行扫描，追踪代码块状态
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    // 匹配独立行的 ``` （代码块起始/结束行）
-    const codeBlockMatch = line.match(/^```\s*([\w-]*)\s*$/);
-    
-    if (codeBlockMatch && !this.isEscaped(charOffset + lines[i].indexOf('```'), escapePositions)) {
-      if (inCodeBlock) {
-        // 遇到闭合标记，退出代码块
-        inCodeBlock = false;
-        codeBlockStartLine = -1;
-      } else {
-        // 遇到起始标记，进入代码块
-        inCodeBlock = true;
-        codeBlockStartLine = i;
-      }
+    if (!this.options.codeBlocks.enabled) {
+      return { fixed: markdown, addedChars: [] };
     }
-    // 更新字符偏移量（当前行长度 + 换行符）
-    charOffset += lines[i].length + 1;
-  }
 
-  // 步骤2：补全所有未闭合的代码块
-  let fixedMarkdown = markdown;
-  if (inCodeBlock) {
-    // 计算插入位置：文本末尾
-    const insertPosition = fixedMarkdown.length;
-    const closingTag = '\n```'; // 补全闭合标记（简化，仅加```）
-    
-    // 插入闭合标记
-    fixedMarkdown += closingTag;
-    // 记录添加的字符
-    addedChars.push(...closingTag.split('').map((char, index) => ({
-      char,
-      position: insertPosition + index
-    })));
-  }
+    const lines = markdown.split('\n');
+    const addedChars: { char: string; position: number }[] = [];
+    let inCodeBlock = false; // 状态机：是否在未闭合的代码块内
+    let codeBlockStartLine = -1; // 记录未闭合代码块的起始行
+    let charOffset = 0; // 字符偏移量（计算插入位置）
 
-  return { fixed: fixedMarkdown, addedChars };
-}
+    // 步骤1：逐行扫描，追踪代码块状态
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      // 匹配独立行的 ``` （代码块起始/结束行）
+      const codeBlockMatch = line.match(/^```\s*([\w-]*)\s*$/);
+
+      if (codeBlockMatch && !this.isEscaped(charOffset + lines[i].indexOf('```'), escapePositions)) {
+        if (inCodeBlock) {
+          // 遇到闭合标记，退出代码块
+          inCodeBlock = false;
+          codeBlockStartLine = -1;
+        } else {
+          // 遇到起始标记，进入代码块
+          inCodeBlock = true;
+          codeBlockStartLine = i;
+        }
+      }
+      // 更新字符偏移量（当前行长度 + 换行符）
+      charOffset += lines[i].length + 1;
+    }
+
+    // 步骤2：补全所有未闭合的代码块
+    let fixedMarkdown = markdown;
+    if (inCodeBlock) {
+      // 计算插入位置：文本末尾
+      const insertPosition = fixedMarkdown.length;
+      const closingTag = '\n```'; // 补全闭合标记（简化，仅加```）
+
+      // 插入闭合标记
+      fixedMarkdown += closingTag;
+      // 记录添加的字符
+      addedChars.push(...closingTag.split('').map((char, index) => ({
+        char,
+        position: insertPosition + index
+      })));
+    }
+
+    return { fixed: fixedMarkdown, addedChars };
+  }
 
 
   // 行内代码修复（`）
+  /**
+   * 行内代码修复（`）：精准补全“单独的`”，而非简单补全奇偶差
+   * @param markdown 原始文本
+   * @param escapePositions 转义符位置数组
+   * @returns 修复后的文本和添加的字符信息
+   */
   private fixInlineCodeWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
     if (!this.options.inlineCode.enabled) {
       return { fixed: markdown, addedChars: [] };
     }
 
-    // 查找所有未转义的 `
-    const inlineCodeRegex = /`/g;
-    const matches: number[] = [];
-    let match;
+    const lines = markdown.split('\n');
+    const addedChars: { char: string; position: number }[] = [];
+    let globalCharOffset = 0;
 
-    while ((match = inlineCodeRegex.exec(markdown)) !== null) {
-      const isEscaped = this.isEscaped(match.index, escapePositions);
-      if (!isEscaped) {
-        matches.push(match.index);
+    lines.forEach((line, lineIdx) => {
+      const lineStartPos = globalCharOffset;
+      const lineEndPos = lineStartPos + line.length;
+      let isInCode = false; // 状态机：是否处于未闭合的行内代码中
+
+      // 1. 逐字符扫描，追踪`的开启/闭合状态（精准定位单独`）
+      for (let charIdx = 0; charIdx < line.length; charIdx++) {
+        const char = line[charIdx];
+        if (char !== '`') continue;
+
+        const globalCharPos = lineStartPos + charIdx;
+        // 跳过转义的`
+        if (this.isEscaped(globalCharPos, escapePositions)) continue;
+
+        // 切换闭合状态：遇到未转义`，开启/关闭行内代码
+        isInCode = !isInCode;
       }
-    }
 
-    // 检查是否有奇数个行内代码标记
-    if (matches.length % 2 !== 0) {
-      const lastBacktick = matches[matches.length - 1];
+      // 2. 仅当本行存在未闭合的`（即有单独`）时，在本行末尾补`
+      if (isInCode) {
+        // 新增：统计本行未转义`的数量
+        const unescapedCount = [...line.matchAll(/`/g)].filter(m =>
+          !this.isEscaped(lineStartPos + m.index!, escapePositions)
+        ).length;
 
-      // 优化：查找行内代码应该结束的位置
-      // 考虑更多边界情况和上下文
-
-      // 查找各种可能的闭合位置
-      const nextSpace = markdown.indexOf(' ', lastBacktick + 1);
-      const nextTab = markdown.indexOf('\t', lastBacktick + 1);
-      const nextNewline = markdown.indexOf('\n', lastBacktick + 1);
-      const nextCodeBlock = markdown.indexOf('```', lastBacktick + 1);
-      const nextMathFormula = markdown.indexOf('$', lastBacktick + 1);
-      const nextLink = markdown.indexOf('[', lastBacktick + 1);
-
-      // 使用正则表达式查找各种标点符号
-      const punctuationRegex = /[.,!?;:()[\]{}"']/g;
-      punctuationRegex.lastIndex = lastBacktick + 1;
-      const punctuationMatch = punctuationRegex.exec(markdown);
-      const nextPunctuation = punctuationMatch ? punctuationMatch.index : -1;
-
-      // 优化：位置选择优先级
-      // 1. 分号后（优先）
-      // 2. 其他标点符号前
-      // 3. 空格/制表符前
-      // 4. 换行前
-      // 5. 特殊语法前（代码块、数学公式、链接）
-      // 6. 文档末尾
-
-      let endPos = markdown.length;
-
-      // 按优先级检查各种位置
-      if (nextPunctuation !== -1) {
-        // 如果是分号，在分号后添加反引号
-        if (markdown[nextPunctuation] === ';') {
-          endPos = nextPunctuation + 1;
-        } else {
-          // 其他标点符号，在标点符号前添加反引号
-          endPos = nextPunctuation;
+        // 仅当“未闭合 + 数量=1”时补全
+        if (isInCode && unescapedCount === 1) {
+          // 补全逻辑...
         }
-      } else if (nextSpace !== -1) {
-        endPos = nextSpace;
-      } else if (nextTab !== -1) {
-        endPos = nextTab;
-      } else if (nextNewline !== -1) {
-        endPos = nextNewline;
-      } else if (nextCodeBlock !== -1) {
-        endPos = nextCodeBlock;
-      } else if (nextMathFormula !== -1) {
-        endPos = nextMathFormula;
-      } else if (nextLink !== -1) {
-        endPos = nextLink;
+        lines[lineIdx] = line + '`';
+        addedChars.push({
+          char: '`',
+          position: lineEndPos
+        });
+        // 更新偏移量（本行长度 + 1换行符 + 1新增`）
+        globalCharOffset += line.length + 2;
+      } else {
+        globalCharOffset += line.length + 1;
       }
+    });
 
-      // 确保闭合位置在合理范围内
-      // 1. 不能在开始标记之前
-      // 2. 不能距离开始标记太远（防止误修复）
-      const maxDistance = 100; // 最大修复距离
-      endPos = Math.max(endPos, lastBacktick + 1);
-      endPos = Math.min(endPos, lastBacktick + maxDistance);
-
-      // 确保闭合位置在当前行内（如果配置了忽略跨行行内代码）
-      if (this.options.inlineCode.ignoreInlineMultiLine && nextNewline !== -1) {
-        endPos = Math.min(endPos, nextNewline);
-      }
-
-      // 在合适的位置插入闭合标记
-      const fixedMarkdown = markdown.slice(0, endPos) + '`' + markdown.slice(endPos);
-      const addedChars = [{ char: '`', position: endPos }];
-
-      return { fixed: fixedMarkdown, addedChars };
-    }
-
-    return { fixed: markdown, addedChars: [] };
+    const fixedMarkdown = lines.join('\n');
+    return { fixed: fixedMarkdown, addedChars };
   }
+
 
   // 数学公式修复
-// src/utils/syntaxFixer.ts 中完整的 fixMathFormulasWithDiff 方法
-private fixMathFormulasWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
-  if (!this.options.mathFormulas.enabled) {
-    return { fixed: markdown, addedChars: [] };
-  }
-
-  let fixedMarkdown = markdown;
-  const allAddedChars: { char: string; position: number }[] = [];
-
-  // ===================== 重构块级公式修复逻辑（核心扩展）=====================
-  // 1. 拆分文本为行，便于逐行处理
-  let lines = fixedMarkdown.split('\n');
-  // 存储所有未闭合的块级公式起始行信息
-  const unclosedBlockMaths: { startLine: number; contentStart: number; contentEnd: number }[] = [];
-  let inUnclosedBlock = false; // 标记是否进入未闭合的块级公式
-  let currentBlockStart = -1; // 当前未闭合块的起始行（$$行）
-
-  // 辅助函数：计算指定行之前的总字符数（含换行符），用于定位插入位置
-  const calculateCharPosition = (endLineIdx: number, linesArr: string[]): number => {
-    let pos = 0;
-    for (let j = 0; j <= endLineIdx; j++) {
-      pos += linesArr[j].length + 1; // +1 代表换行符 \n
+  private fixMathFormulasWithDiff(markdown: string, escapePositions: number[]): { fixed: string; addedChars: { char: string; position: number }[] } {
+    if (!this.options.mathFormulas.enabled) {
+      return { fixed: markdown, addedChars: [] };
     }
-    return pos;
-  };
 
-  // 辅助函数：检查行是否为未转义的 $$ 独占行
-  const isUnescapedDollarLine = (lineIdx: number, linesArr: string[]): boolean => {
-    const line = linesArr[lineIdx];
-    const trimmedLine = line.trim();
-    if (trimmedLine !== '$$') return false;
-    // 检查 $$ 是否被转义
-    const dollarPos = line.indexOf('$$');
-    return dollarPos !== -1 && !this.isEscaped(calculateCharPosition(lineIdx - 1, linesArr) + dollarPos, escapePositions);
-  };
+    let fixedMarkdown = markdown;
+    const allAddedChars: { char: string; position: number }[] = [];
 
-  // 第一步：遍历所有行，识别所有未闭合的块级公式（支持多行内容 + 批量处理）
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    // ===================== 重构块级公式修复逻辑（核心扩展）=====================
+    // 1. 拆分文本为行，便于逐行处理
+    let lines = fixedMarkdown.split('\n');
+    // 存储所有未闭合的块级公式起始行信息
+    const unclosedBlockMaths: { startLine: number; contentStart: number; contentEnd: number }[] = [];
+    let inUnclosedBlock = false; // 标记是否进入未闭合的块级公式
+    let currentBlockStart = -1; // 当前未闭合块的起始行（$$行）
 
-    // 场景1：遇到未转义的 $$ 独占行 → 判定为块级公式起始/结束
-    if (isUnescapedDollarLine(i, lines)) {
-      if (!inUnclosedBlock) {
-        // 标记为块级公式开始
-        inUnclosedBlock = true;
-        currentBlockStart = i;
-      } else {
-        // 遇到闭合的 $$ → 标记为已闭合
+    // 辅助函数：计算指定行之前的总字符数（含换行符），用于定位插入位置
+    const calculateCharPosition = (endLineIdx: number, linesArr: string[]): number => {
+      let pos = 0;
+      for (let j = 0; j <= endLineIdx; j++) {
+        pos += linesArr[j].length + 1; // +1 代表换行符 \n
+      }
+      return pos;
+    };
+
+    // 辅助函数：检查行是否为未转义的 $$ 独占行
+    const isUnescapedDollarLine = (lineIdx: number, linesArr: string[]): boolean => {
+      const line = linesArr[lineIdx];
+      const trimmedLine = line.trim();
+      if (trimmedLine !== '$$') return false;
+      // 检查 $$ 是否被转义
+      const dollarPos = line.indexOf('$$');
+      return dollarPos !== -1 && !this.isEscaped(calculateCharPosition(lineIdx - 1, linesArr) + dollarPos, escapePositions);
+    };
+
+    // 第一步：遍历所有行，识别所有未闭合的块级公式（支持多行内容 + 批量处理）
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+
+      // 场景1：遇到未转义的 $$ 独占行 → 判定为块级公式起始/结束
+      if (isUnescapedDollarLine(i, lines)) {
+        if (!inUnclosedBlock) {
+          // 标记为块级公式开始
+          inUnclosedBlock = true;
+          currentBlockStart = i;
+        } else {
+          // 遇到闭合的 $$ → 标记为已闭合
+          inUnclosedBlock = false;
+          currentBlockStart = -1;
+        }
+      }
+      // 场景2：处于未闭合块中，且是最后一行 → 记录未闭合块信息
+      else if (inUnclosedBlock && i === lines.length - 1) {
+        unclosedBlockMaths.push({
+          startLine: currentBlockStart,
+          contentStart: currentBlockStart + 1,
+          contentEnd: i // 多行内容的结束行
+        });
+      }
+      // 场景3：处于未闭合块中，遇到空行 → 判定块内容结束，记录未闭合块
+      else if (inUnclosedBlock && line === '') {
+        unclosedBlockMaths.push({
+          startLine: currentBlockStart,
+          contentStart: currentBlockStart + 1,
+          contentEnd: i - 1 // 空行前的最后一行是内容行
+        });
         inUnclosedBlock = false;
         currentBlockStart = -1;
       }
-    } 
-    // 场景2：处于未闭合块中，且是最后一行 → 记录未闭合块信息
-    else if (inUnclosedBlock && i === lines.length - 1) {
-      unclosedBlockMaths.push({
-        startLine: currentBlockStart,
-        contentStart: currentBlockStart + 1,
-        contentEnd: i // 多行内容的结束行
-      });
     }
-    // 场景3：处于未闭合块中，遇到空行 → 判定块内容结束，记录未闭合块
-    else if (inUnclosedBlock && line === '') {
-      unclosedBlockMaths.push({
-        startLine: currentBlockStart,
-        contentStart: currentBlockStart + 1,
-        contentEnd: i - 1 // 空行前的最后一行是内容行
+
+    // 第二步：按规则修复所有未闭合的块级公式
+    if (unclosedBlockMaths.length > 0) {
+      let lineOffset = 0; // 记录行偏移（插入行导致的行索引变化）
+      unclosedBlockMaths.forEach(block => {
+        // 修正行索引（处理之前插入行导致的偏移）
+        const actualContentEnd = block.contentEnd + lineOffset;
+        const targetLine = actualContentEnd + 1; // 要插入$$的目标行（第三行/空行）
+        let insertCharPos: number;
+        let addedChars: { char: string; position: number }[] = [];
+
+        // 规则1：目标行存在且为空行 → 直接替换为空行为$$
+        if (targetLine < lines.length && lines[targetLine].trim() === '') {
+          insertCharPos = calculateCharPosition(targetLine - 1, lines);
+          // 替换空行为$$
+          lines[targetLine] = '$$';
+          addedChars = [{ char: '$$', position: insertCharPos }];
+        }
+        // 规则2：目标行不存在（内容行是最后一行）→ 新增行并补$$
+        else {
+          insertCharPos = calculateCharPosition(actualContentEnd, lines);
+          // 插入新行（$$）
+          lines.splice(targetLine, 0, '$$');
+          // 记录添加的字符（换行符 + $$）
+          addedChars = [
+            { char: '\n', position: insertCharPos - 1 }, // 换行符（补在内容行末尾）
+            { char: '$$', position: insertCharPos }      // $$（新行）
+          ];
+          lineOffset += 1; // 插入了一行，后续行索引偏移+1
+        }
+
+        // 合并到总修复记录
+        allAddedChars.push(...addedChars);
       });
-      inUnclosedBlock = false;
-      currentBlockStart = -1;
+
+      // 更新修复后的文本
+      fixedMarkdown = lines.join('\n');
+      // 重新拆分行（用于后续行内公式处理）
+      lines = fixedMarkdown.split('\n');
     }
-  }
 
-  // 第二步：按规则修复所有未闭合的块级公式
-  if (unclosedBlockMaths.length > 0) {
-    let lineOffset = 0; // 记录行偏移（插入行导致的行索引变化）
-    unclosedBlockMaths.forEach(block => {
-      // 修正行索引（处理之前插入行导致的偏移）
-      const actualContentEnd = block.contentEnd + lineOffset;
-      const targetLine = actualContentEnd + 1; // 要插入$$的目标行（第三行/空行）
-      let insertCharPos: number;
-      let addedChars: { char: string; position: number }[] = [];
+    // ===================== 保留原行内公式修复逻辑 =====================
+    let charOffset = 0; // 记录字符偏移量（处理行添加后的位置变化）
+    const newLines = [...lines];
 
-      // 规则1：目标行存在且为空行 → 直接替换为空行为$$
-      if (targetLine < lines.length && lines[targetLine].trim() === '') {
-        insertCharPos = calculateCharPosition(targetLine - 1, lines);
-        // 替换空行为$$
-        lines[targetLine] = '$$';
-        addedChars = [{ char: '$$', position: insertCharPos }];
-      } 
-      // 规则2：目标行不存在（内容行是最后一行）→ 新增行并补$$
-      else {
-        insertCharPos = calculateCharPosition(actualContentEnd, lines);
-        // 插入新行（$$）
-        lines.splice(targetLine, 0, '$$');
-        // 记录添加的字符（换行符 + $$）
-        addedChars = [
-          { char: '\n', position: insertCharPos - 1 }, // 换行符（补在内容行末尾）
-          { char: '$$', position: insertCharPos }      // $$（新行）
-        ];
-        lineOffset += 1; // 插入了一行，后续行索引偏移+1
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
+      const currentLineOffset = charOffset;
+
+      // 跳过块级公式行
+      if (line.trim().startsWith('$$') || line.trim().endsWith('$$')) {
+        charOffset += line.length + 1; // +1 换行符
+        continue;
       }
 
-      // 合并到总修复记录
-      allAddedChars.push(...addedChars);
+      // 匹配当前行未转义的$（排除$$中的$）
+      const inlineMathRegex = /(?<!\\)\$(?!\$)/g;
+      const inlineMatches: number[] = [];
+      let lineMatch: RegExpExecArray | null;
+
+      while ((lineMatch = inlineMathRegex.exec(line)) !== null) {
+        const matchPosInLine = lineMatch.index;
+        const matchPosInFull = currentLineOffset + matchPosInLine;
+        const isEscaped = this.isEscaped(matchPosInFull, escapePositions);
+
+        if (!isEscaped) {
+          inlineMatches.push(matchPosInFull);
+        }
+      }
+
+      // 奇数个$ → 未闭合，在本行末尾添加$
+      if (inlineMatches.length % 2 !== 0) {
+        // 计算本行末尾的位置（行尾，换行符前）
+        const lineEndPos = currentLineOffset + line.length;
+
+        // 插入$到本行末尾
+        newLines[lineIdx] = line + '$';
+        fixedMarkdown = newLines.join('\n');
+
+        // 记录添加的字符
+        const addedChar = {
+          char: '$',
+          position: lineEndPos
+        };
+        allAddedChars.push(addedChar);
+
+        // 更新字符偏移量（当前行长度+1）
+        charOffset += (line.length + 1) + 1; // +1 新增的$，+1 换行符
+      } else {
+        charOffset += line.length + 1; // +1 换行符
+      }
+    }
+
+    return { fixed: fixedMarkdown, addedChars: allAddedChars };
+  }
+
+  /**
+   * 查找未闭合的括号匹配（支持跨行未闭合场景）
+   * @param markdown 原始文本
+   * @param prefixRegex 前缀正则表达式（用于区分链接和图片）
+   * @param escapePositions 转义符位置数组
+   * @returns 匹配结果数组
+   */
+  private findUnclosedBrackets(
+    markdown: string,
+    prefixRegex: string,
+    escapePositions: number[]
+  ): Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> {
+    const matches: Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> = [];
+
+    // ========== 1. 匹配未闭合的 [text](url / ![alt](url（支持跨行） ==========
+    // 正则说明：
+    // ${prefixRegex} - 前缀（链接：(?<!\\\\|!)，图片：!）
+    // \[(.*?)(?<!\\\\)\] - 匹配[]包裹的文本（排除转义]）
+    // \s*\( - 匹配括号前的空白+左括号
+    // ([\s\S]*?) - 匹配括号内任意内容（包括换行，支持跨行）
+    // (?=\n|$| |\t) - 匹配到URL结束位置（换行/文本末尾/空格/制表符前）
+    // (?!\)) - 确保后面没有闭合)
+    const unclosedRegex = new RegExp(
+      `${prefixRegex}\\[(.+?)(?<!\\\\)\\]\\s*\\(([\\s\\S]*?)(?=\\n|$| |\\t)(?!\\))`,
+      'g'
+    );
+
+    let match: RegExpExecArray | null;
+    while ((match = unclosedRegex.exec(markdown)) !== null) {
+      // 检查 [ 是否被转义
+      const bracketStartPos = match.index + prefixRegex.length;
+      if (this.isEscaped(bracketStartPos, escapePositions)) continue;
+
+      // 确定未闭合链接/图片的实际结束位置（URL最后一个字符的位置）
+      const actualEnd = match.index + match[0].length;
+
+      // 验证：向后查找直到文本结束/下一个语法开始，确认无)
+      const afterMatch = markdown.slice(actualEnd);
+      const nextCloseParen = afterMatch.indexOf(')');
+      const nextSyntax = afterMatch.search(/\[|!|\$|`|```/); // 下一个Markdown语法开始
+      // 如果)在其他语法之后，视为无有效闭合
+      const hasValidClose = nextCloseParen !== -1 && (nextSyntax === -1 || nextCloseParen < nextSyntax);
+
+      if (!hasValidClose) {
+        matches.push({
+          start: match.index,
+          end: actualEnd, // 实际结束位置（URL最后一个字符）
+          type: 'unclosed'
+        });
+      }
+    }
+
+    // ========== 2. 匹配仅含[]无()的场景（支持跨行） ==========
+    const onlyBracketRegex = new RegExp(
+      `${prefixRegex}\\[(.+?)(?<!\\\\)\\](?!\\s*\\()`,
+      'g'
+    );
+
+    while ((match = onlyBracketRegex.exec(markdown)) !== null) {
+      if (!match) continue;
+
+      // 检查 [ 是否被转义
+      const bracketStartPos = match.index + prefixRegex.length;
+      if (this.isEscaped(bracketStartPos, escapePositions)) continue;
+
+      // 排除与unclosed重复的匹配
+      const isDuplicate = matches.some(m =>
+        m.start <= match.index && m.end >= match.index + match[0].length
+      );
+      if (!isDuplicate) {
+        matches.push({
+          start: match.index,
+          end: match.index + match[0].length,
+          type: 'onlyBracket'
+        });
+      }
+    }
+
+    return matches;
+  }
+
+  /**
+   * 修复版链接修复：支持跨行未闭合链接补全)
+   * @param markdown 原始文本
+   * @param escapePositions 转义符位置数组
+   * @returns 修复后的文本和添加的字符信息
+   */
+  private fixLinksWithDiff(
+    markdown: string,
+    escapePositions: number[]
+  ): { fixed: string; addedChars: { char: string; position: number }[] } {
+    if (!this.options?.links?.enabled) {
+      return { fixed: markdown, addedChars: [] };
+    }
+
+    let fixedMarkdown = markdown;
+    const addedChars: { char: string; position: number }[] = [];
+    let offset = 0;
+
+    // 链接前缀：排除转义的[和图片前缀!
+    const linkPrefix = '(?<!\\\\|!)';
+    const matches = this.findUnclosedBrackets(fixedMarkdown, linkPrefix, escapePositions);
+
+    // 按结束位置降序排序（从后往前修复，避免位置偏移）
+    matches.sort((a, b) => b.end - a.end);
+
+    // 核心修复逻辑：无论是否跨行，都在URL末尾添加)
+    matches.forEach(matchItem => {
+      const actualEnd = matchItem.end + offset;
+      if (actualEnd > fixedMarkdown.length) return;
+
+      if (matchItem.type === 'unclosed') {
+        // 仅在URL末尾添加)（核心需求，支持跨行）
+        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
+        addedChars.push({ char: ')', position: actualEnd });
+        offset += 1;
+      } else if (matchItem.type === 'onlyBracket') {
+        // 补充()，支持自动填充空URL
+        const fillChar = this.options.links.autoFillEmptyUrl ? '#' : '';
+        const addStr = `(${fillChar})`;
+        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
+        addedChars.push({ char: '(', position: actualEnd });
+        addedChars.push({ char: ')', position: actualEnd + 1 });
+        offset += 2;
+      }
     });
 
-    // 更新修复后的文本
-    fixedMarkdown = lines.join('\n');
-    // 重新拆分行（用于后续行内公式处理）
-    lines = fixedMarkdown.split('\n');
+    return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
   }
 
-  // ===================== 保留原行内公式修复逻辑 =====================
-  let charOffset = 0; // 记录字符偏移量（处理行添加后的位置变化）
-  const newLines = [...lines];
-
-  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-    const line = lines[lineIdx];
-    const currentLineOffset = charOffset;
-
-    // 跳过块级公式行
-    if (line.trim().startsWith('$$') || line.trim().endsWith('$$')) {
-      charOffset += line.length + 1; // +1 换行符
-      continue;
+  /**
+   * 修复版图片修复：支持跨行未闭合图片补全)
+   * @param markdown 原始文本
+   * @param escapePositions 转义符位置数组
+   * @returns 修复后的文本和添加的字符信息
+   */
+  private fixImagesWithDiff(
+    markdown: string,
+    escapePositions: number[]
+  ): { fixed: string; addedChars: { char: string; position: number }[] } {
+    if (!this.options?.images?.enabled) {
+      return { fixed: markdown, addedChars: [] };
     }
 
-    // 匹配当前行未转义的$（排除$$中的$）
-    const inlineMathRegex = /(?<!\\)\$(?!\$)/g;
-    const inlineMatches: number[] = [];
-    let lineMatch: RegExpExecArray | null;
+    let fixedMarkdown = markdown;
+    const addedChars: { char: string; position: number }[] = [];
+    let offset = 0;
 
-    while ((lineMatch = inlineMathRegex.exec(line)) !== null) {
-      const matchPosInLine = lineMatch.index;
-      const matchPosInFull = currentLineOffset + matchPosInLine;
-      const isEscaped = this.isEscaped(matchPosInFull, escapePositions);
+    // 图片前缀为!
+    const imagePrefix = '!';
+    const matches = this.findUnclosedBrackets(fixedMarkdown, imagePrefix, escapePositions);
 
-      if (!isEscaped) {
-        inlineMatches.push(matchPosInFull);
+    // 按结束位置降序排序
+    matches.sort((a, b) => b.end - a.end);
+
+    // 核心修复逻辑：支持跨行补全)
+    matches.forEach(matchItem => {
+      const actualEnd = matchItem.end + offset;
+      if (actualEnd > fixedMarkdown.length) return;
+
+      if (matchItem.type === 'unclosed') {
+        // 仅在URL末尾添加)
+        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
+        addedChars.push({ char: ')', position: actualEnd });
+        offset += 1;
+      } else if (matchItem.type === 'onlyBracket') {
+        // 继承链接规则填充空URL
+        const fillChar = this.options.images.inheritLinkRules && this.options.links.autoFillEmptyUrl ? '#' : '';
+        const addStr = `(${fillChar})`;
+        fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
+        addedChars.push({ char: '(', position: actualEnd });
+        addedChars.push({ char: ')', position: actualEnd + 1 });
+        offset += 2;
       }
-    }
+    });
 
-    // 奇数个$ → 未闭合，在本行末尾添加$
-    if (inlineMatches.length % 2 !== 0) {
-      // 计算本行末尾的位置（行尾，换行符前）
-      const lineEndPos = currentLineOffset + line.length;
-
-      // 插入$到本行末尾
-      newLines[lineIdx] = line + '$';
-      fixedMarkdown = newLines.join('\n');
-
-      // 记录添加的字符
-      const addedChar = {
-        char: '$',
-        position: lineEndPos
-      };
-      allAddedChars.push(addedChar);
-
-      // 更新字符偏移量（当前行长度+1）
-      charOffset += (line.length + 1) + 1; // +1 新增的$，+1 换行符
-    } else {
-      charOffset += line.length + 1; // +1 换行符
-    }
+    return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
   }
 
-  return { fixed: fixedMarkdown, addedChars: allAddedChars };
-}
-
-/**
- * 查找未闭合的括号匹配（支持跨行未闭合场景）
- * @param markdown 原始文本
- * @param prefixRegex 前缀正则表达式（用于区分链接和图片）
- * @param escapePositions 转义符位置数组
- * @returns 匹配结果数组
- */
-private findUnclosedBrackets(
-  markdown: string, 
-  prefixRegex: string, 
-  escapePositions: number[]
-): Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> {
-  const matches: Array<{ start: number; end: number; type: 'unclosed' | 'onlyBracket' }> = [];
-  
-  // ========== 1. 匹配未闭合的 [text](url / ![alt](url（支持跨行） ==========
-  // 正则说明：
-  // ${prefixRegex} - 前缀（链接：(?<!\\\\|!)，图片：!）
-  // \[(.*?)(?<!\\\\)\] - 匹配[]包裹的文本（排除转义]）
-  // \s*\( - 匹配括号前的空白+左括号
-  // ([\s\S]*?) - 匹配括号内任意内容（包括换行，支持跨行）
-  // (?=\n|$| |\t) - 匹配到URL结束位置（换行/文本末尾/空格/制表符前）
-  // (?!\)) - 确保后面没有闭合)
-  const unclosedRegex = new RegExp(
-    `${prefixRegex}\\[(.+?)(?<!\\\\)\\]\\s*\\(([\\s\\S]*?)(?=\\n|$| |\\t)(?!\\))`,
-    'g'
-  );
-
-  let match: RegExpExecArray | null;
-  while ((match = unclosedRegex.exec(markdown)) !== null) {
-    // 检查 [ 是否被转义
-    const bracketStartPos = match.index + prefixRegex.length;
-    if (this.isEscaped(bracketStartPos, escapePositions)) continue;
-
-    // 确定未闭合链接/图片的实际结束位置（URL最后一个字符的位置）
-    const actualEnd = match.index + match[0].length;
-    
-    // 验证：向后查找直到文本结束/下一个语法开始，确认无)
-    const afterMatch = markdown.slice(actualEnd);
-    const nextCloseParen = afterMatch.indexOf(')');
-    const nextSyntax = afterMatch.search(/\[|!|\$|`|```/); // 下一个Markdown语法开始
-    // 如果)在其他语法之后，视为无有效闭合
-    const hasValidClose = nextCloseParen !== -1 && (nextSyntax === -1 || nextCloseParen < nextSyntax);
-
-    if (!hasValidClose) {
-      matches.push({
-        start: match.index,
-        end: actualEnd, // 实际结束位置（URL最后一个字符）
-        type: 'unclosed'
-      });
-    }
+  // 保留原有的 isEscaped 方法
+  private isEscaped(position: number, escapePositions: number[]): boolean {
+    return escapePositions.includes(position);
   }
-
-  // ========== 2. 匹配仅含[]无()的场景（支持跨行） ==========
-  const onlyBracketRegex = new RegExp(
-    `${prefixRegex}\\[(.+?)(?<!\\\\)\\](?!\\s*\\()`,
-    'g'
-  );
-
-  while ((match = onlyBracketRegex.exec(markdown)) !== null) {
-    if (!match) continue;
-    
-    // 检查 [ 是否被转义
-    const bracketStartPos = match.index + prefixRegex.length;
-    if (this.isEscaped(bracketStartPos, escapePositions)) continue;
-
-    // 排除与unclosed重复的匹配
-    const isDuplicate = matches.some(m =>
-      m.start <= match.index && m.end >= match.index + match[0].length
-    );
-    if (!isDuplicate) {
-      matches.push({
-        start: match.index,
-        end: match.index + match[0].length,
-        type: 'onlyBracket'
-      });
-    }
-  }
-
-  return matches;
-}
-
-/**
- * 修复版链接修复：支持跨行未闭合链接补全)
- * @param markdown 原始文本
- * @param escapePositions 转义符位置数组
- * @returns 修复后的文本和添加的字符信息
- */
-private fixLinksWithDiff(
-  markdown: string, 
-  escapePositions: number[]
-): { fixed: string; addedChars: { char: string; position: number }[] } {
-  if (!this.options?.links?.enabled) {
-    return { fixed: markdown, addedChars: [] };
-  }
-
-  let fixedMarkdown = markdown;
-  const addedChars: { char: string; position: number }[] = [];
-  let offset = 0;
-
-  // 链接前缀：排除转义的[和图片前缀!
-  const linkPrefix = '(?<!\\\\|!)';
-  const matches = this.findUnclosedBrackets(fixedMarkdown, linkPrefix, escapePositions);
-
-  // 按结束位置降序排序（从后往前修复，避免位置偏移）
-  matches.sort((a, b) => b.end - a.end);
-
-  // 核心修复逻辑：无论是否跨行，都在URL末尾添加)
-  matches.forEach(matchItem => {
-    const actualEnd = matchItem.end + offset;
-    if (actualEnd > fixedMarkdown.length) return;
-
-    if (matchItem.type === 'unclosed') {
-      // 仅在URL末尾添加)（核心需求，支持跨行）
-      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
-      addedChars.push({ char: ')', position: actualEnd });
-      offset += 1;
-    } else if (matchItem.type === 'onlyBracket') {
-      // 补充()，支持自动填充空URL
-      const fillChar = this.options.links.autoFillEmptyUrl ? '#' : '';
-      const addStr = `(${fillChar})`;
-      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
-      addedChars.push({ char: '(', position: actualEnd });
-      addedChars.push({ char: ')', position: actualEnd + 1 });
-      offset += 2;
-    }
-  });
-
-  return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
-}
-
-/**
- * 修复版图片修复：支持跨行未闭合图片补全)
- * @param markdown 原始文本
- * @param escapePositions 转义符位置数组
- * @returns 修复后的文本和添加的字符信息
- */
-private fixImagesWithDiff(
-  markdown: string, 
-  escapePositions: number[]
-): { fixed: string; addedChars: { char: string; position: number }[] } {
-  if (!this.options?.images?.enabled) {
-    return { fixed: markdown, addedChars: [] };
-  }
-
-  let fixedMarkdown = markdown;
-  const addedChars: { char: string; position: number }[] = [];
-  let offset = 0;
-
-  // 图片前缀为!
-  const imagePrefix = '!';
-  const matches = this.findUnclosedBrackets(fixedMarkdown, imagePrefix, escapePositions);
-
-  // 按结束位置降序排序
-  matches.sort((a, b) => b.end - a.end);
-
-  // 核心修复逻辑：支持跨行补全)
-  matches.forEach(matchItem => {
-    const actualEnd = matchItem.end + offset;
-    if (actualEnd > fixedMarkdown.length) return;
-
-    if (matchItem.type === 'unclosed') {
-      // 仅在URL末尾添加)
-      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + ')' + fixedMarkdown.slice(actualEnd);
-      addedChars.push({ char: ')', position: actualEnd });
-      offset += 1;
-    } else if (matchItem.type === 'onlyBracket') {
-      // 继承链接规则填充空URL
-      const fillChar = this.options.images.inheritLinkRules && this.options.links.autoFillEmptyUrl ? '#' : '';
-      const addStr = `(${fillChar})`;
-      fixedMarkdown = fixedMarkdown.slice(0, actualEnd) + addStr + fixedMarkdown.slice(actualEnd);
-      addedChars.push({ char: '(', position: actualEnd });
-      addedChars.push({ char: ')', position: actualEnd + 1 });
-      offset += 2;
-    }
-  });
-
-  return { fixed: fixedMarkdown, addedChars: addedChars.reverse() };
-}
-
-// 保留原有的 isEscaped 方法
-private isEscaped(position: number, escapePositions: number[]): boolean {
-  return escapePositions.includes(position);
-}
 
   // 表格修复
   private fixTablesWithDiff(markdown: string): { fixed: string; addedChars: { char: string; position: number }[] } {
