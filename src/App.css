@@ -366,3 +366,31 @@ pre code[data-highlight-lines] .highlight-line {
   color: #ef4444;
   font-weight: bold;
 }
+
+/* 行内代码样式 */
+.preview-content code {
+  font-weight: bold;
+  font-family: 'Fira Code', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
+  background-color: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* Spoiler 样式 */
+.spoiler {
+  background-color: #f8fafc;
+  color: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  padding: 2px 4px;
+  border-radius: 3px;
+  user-select: none;
+  border: 1px solid #e2e8f0;
+}
+
+.spoiler:hover {
+  background-color: transparent;
+  color: inherit;
+  border-color: transparent;
+}

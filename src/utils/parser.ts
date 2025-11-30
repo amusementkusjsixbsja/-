@@ -2,6 +2,7 @@
 import { remark, parse, gfm, directive, math, remark2rehype, rehypeKatex, rehypeHighlight, rehypeRaw, rehypeStringify } from './config';
 import { MarkdownStreamBuffer } from './buffer';
 import { handleDirectives, handleCodeBlockLineHighlight } from './plugins';
+import { handleSpoiler } from './spoiler';
 
 // 全量解析函数
 async function parseFullMarkdown(markdown: string): Promise<string> {
@@ -11,6 +12,7 @@ async function parseFullMarkdown(markdown: string): Promise<string> {
     .use(directive)
     .use(handleDirectives)
     .use(handleCodeBlockLineHighlight)
+    .use(handleSpoiler)
     .use(math)
     .use(remark2rehype, { allowDangerousHtml: true, raw: true })
     .use(rehypeRaw)
