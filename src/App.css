@@ -4,7 +4,7 @@ html,
 body {
   height: 100%;
   overflow: hidden;
-  /* 这是关键：隐藏任何溢出的内容，从而禁用滚动条 */
+  /* 隐藏滚动条 */
   margin: 0;
   padding: 0;
 }
@@ -17,13 +17,15 @@ body {
   /* 让文字基线对齐，看起来更协调 */
   justify-content: space-between;
   /* 让它们分别靠左和靠右，两端对齐 */
-  margin-bottom: 20px;
+  margin-bottom: 10px;
   /* 与下方开关拉开一些距离 */
 }
 
 .header h1 {
   margin: 0;
   /* h1 默认有 margin，需要清除 */
+  font-size: 1.5em;
+  /* 减小标题字体大小 */
 }
 
 .header p {
@@ -31,7 +33,7 @@ body {
   /* p 默认有 margin，需要清除 */
   color: #64748b;
   /* 给署名一个柔和的颜色 */
-  font-size: 0.9em;
+  font-size: 0.85em;
   /* 让署名文字小一点 */
 }
 
@@ -46,8 +48,11 @@ body {
 .app {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 15px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 h1,
@@ -59,16 +64,22 @@ h2 {
   /* 减小标题下方的间距 */
 }
 
+h2 {
+  font-size: 1.2em;
+  /* 减小h2字体大小 */
+}
+
 /* 功能开关区域样式 */
 .feature-toggles {
   display: flex;
-  gap: 24px;
-  margin: 16px 0;
+  gap: 16px;
+  margin: 10px 0;
   padding: 12px 16px;
   background-color: #ffffff;
   border-radius: 8px;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 /* 单个开关项样式 */
@@ -76,6 +87,46 @@ h2 {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* 流式渲染内联控制器样式 */
+.stream-controls-inline {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.control-item-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.control-item-inline label {
+  color: #334155;
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 内联滑动条样式 */
+.inline-slider {
+  width: 150px;
+  margin: 0;
+}
+
+/* 确保滑块样式在不同浏览器中一致 */
+.inline-slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+}
+
+.inline-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
 }
 
 .mode-info {
@@ -88,9 +139,9 @@ h2 {
   display: flex;
   gap: 24px;
   /* 增加编辑器和预览区的间距 */
-  margin-top: 20px;
-  height: calc(100vh - 150px);
-  /* 固定容器高度，避免页面整体滚动 */
+  margin-top: 10px;
+  height: calc(100vh - 180px);
+  /* 调整高度计算，确保所有内容在视口内显示 */
 }
 
 .editor,
@@ -120,15 +171,15 @@ h2 {
 
 /* 删除全部按钮样式 */
 .clear-button {
-  padding: 6px 12px;
-  font-size: 14px;
+  padding: 4px 8px;
+  font-size: 12px;
   color: #ef4444;
   /* 红色文字，表示危险操作 */
   background-color: transparent;
   /* 透明背景 */
   border: 1px solid #ef4444;
   /* 红色边框 */
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease-in-out;
   /* 添加平滑过渡效果 */
@@ -147,6 +198,7 @@ h2 {
 }
 
 
+
 /* --- 编辑区与预览区 --- */
 textarea,
 .preview-content {
@@ -157,10 +209,11 @@ textarea,
   box-sizing: border-box;
   transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
   /* 添加平滑过渡效果 */
+  height: calc(100% - 50px);
+  /* 确保高度一致，减去标题和间距的高度 */
 }
 
 textarea {
-  flex-grow: 1;
   padding: 20px;
   /* 增加内边距，让内容更舒展 */
   font-size: 16px;
@@ -180,7 +233,6 @@ textarea:focus {
 }
 
 .preview-content {
-  flex-grow: 1;
   padding: 20px;
   line-height: 1.7;
   /* 稍微增加行高，提升阅读体验 */
@@ -405,4 +457,88 @@ pre code[data-highlight-lines] .highlight-line {
   background-color: transparent;
   color: inherit;
   border-color: transparent;
+}
+
+/* 流式渲染控制器样式 */
+.stream-controls {
+  background-color: #ffffff;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 16px 0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+}
+
+.stream-controls h3 {
+  margin: 0 0 16px 0;
+  color: #1e293b;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.control-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.control-item label {
+  color: #334155;
+  font-size: 0.95em;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+/* 滑动条样式 */
+.slider {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #e2e8f0;
+  outline: none;
+  transition: all 0.2s ease-in-out;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.slider::-webkit-slider-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.slider::-moz-range-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.slider:focus {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
